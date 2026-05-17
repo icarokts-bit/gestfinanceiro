@@ -1,1741 +1,1439 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-pt">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FinançasPro - Gestão Financeira Pessoal</title>
-    <!-- Tailwind CSS para estilização premium -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Icons para ícones modernos -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-        body {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-        }
-        /* Custom scrollbar para deixar a interface limpa */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinançasPro - Sistema de Gestão Financeira Pessoal</title>
+  <!-- Tailwind CSS para estilização moderna e premium -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Babel para transpilação de componentes React JSX no browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 </head>
-<body class="bg-slate-50 text-slate-850 min-h-screen flex flex-col">
+<body class="bg-slate-50 text-slate-800 font-sans antialiased">
 
-    <!-- Notificações flutuantes (Toast) -->
-    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+  <!-- Ecrã de carregamento inicial em CSS Puro -->
+  <div id="root">
+    <div class="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6">
+      <div class="text-center space-y-4 max-w-sm">
+        <div class="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <h2 class="text-lg font-black tracking-tight">FinançasPro</h2>
+        <p class="text-xs text-slate-400">A iniciar os módulos de segurança e a sincronizar os seus registos locais...</p>
+      </div>
+    </div>
+  </div>
 
-    <!-- Header principal -->
-    <header class="bg-slate-950 text-white sticky top-0 z-40 shadow-lg border-b border-slate-900">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div class="flex items-center gap-3">
-                <div class="bg-emerald-500 p-2.5 rounded-2xl text-slate-950 shadow-lg shadow-emerald-500/25 flex items-center justify-center">
-                    <i data-lucide="trending-up" class="w-6 h-6"></i>
-                </div>
-                <div>
-                    <h1 class="text-xl font-extrabold tracking-tight flex items-center gap-2">
-                        FinançasPro <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">Cloud v2.5</span>
-                    </h1>
-                    <p class="text-xs text-slate-400">Sincronizado em Nuvem Realtime</p>
-                </div>
-            </div>
+  <!-- Bloco único de aplicação React + Firebase -->
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useMemo } from 'https://esm.sh/react@18.2.0';
+    import ReactDOM from 'https://esm.sh/react-dom@18.2.0/client';
+    
+    // Importações oficiais do Firebase v10 Web SDK via CDN seguro
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { 
+      getAuth, 
+      signInAnonymously, 
+      signInWithCustomToken, 
+      onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { 
+      getFirestore, 
+      doc, 
+      setDoc, 
+      getDoc, 
+      collection, 
+      onSnapshot, 
+      addDoc, 
+      deleteDoc, 
+      updateDoc 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-            <!-- Importação e Exportação de Backups locais -->
-            <div class="flex items-center gap-2">
-                <div id="cloud-status" class="text-xs text-amber-400 mr-2 flex items-center gap-1">
-                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                    Autenticando...
-                </div>
-                <button 
-                    onclick="exportData()"
-                    class="flex items-center gap-2 px-3.5 py-2 bg-slate-900 text-slate-350 hover:text-white rounded-xl text-xs font-semibold border border-slate-800 hover:bg-slate-850 transition"
-                    title="Salvar backup completo em seu computador"
-                >
-                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                    <span>Exportar Backup</span>
-                </button>
-                <label 
-                    class="flex items-center gap-2 px-3.5 py-2 bg-slate-900 text-slate-350 hover:text-white rounded-xl text-xs font-semibold border border-slate-800 hover:bg-slate-850 cursor-pointer transition"
-                    title="Restaurar dados salvos anteriormente"
-                >
-                    <i data-lucide="upload" class="w-3.5 h-3.5"></i>
-                    <span>Importar</span>
-                    <input type="file" id="importFile" accept=".json" class="hidden" onchange="importData(event)">
-                </label>
-            </div>
-        </div>
-    </header>
+    // ---------------------------------------------------------
+    // CONFIGURAÇÃO DO SEU PROJETO FIREBASE (CONECTADA)
+    // ---------------------------------------------------------
+    const firebaseConfig = {
+      apiKey: "AIzaSyCT_lmCQQEvSTfng4pITg7DJ5O-X0gWyXc",
+      authDomain: "gestfinanceira-a8a7b.firebaseapp.com",
+      projectId: "gestfinanceira-a8a7b",
+      storageBucket: "gestfinanceira-a8a7b.firebasestorage.app",
+      messagingSenderId: "622341942143",
+      appId: "1:622341942143:web:f0fc5c176903d3d71a884a",
+      measurementId: "G-84SYMRQ7F6"
+    };
 
-    <!-- Grid Principal do Aplicativo -->
-    <div class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+    // Inicialização das instâncias do ecossistema Google Cloud
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // ID de isolamento da App para cumprimento da Regra 1
+    const appId = 'gestfinanceira-a8a7b';
+
+    // Categorias padrão traduzidas para PT-PT
+    const CATEGORIES = {
+      receita: [
+        { id: 'salario', name: 'Salário', color: 'bg-emerald-500', icon: '💼' },
+        { id: 'investimentos', name: 'Rendimentos', color: 'bg-teal-500', icon: '📈' },
+        { id: 'freelance', name: 'Trabalho Independente', color: 'bg-indigo-500', icon: '💻' },
+        { id: 'outros_rec', name: 'Outras Receitas', color: 'bg-cyan-500', icon: '💵' }
+      ],
+      despesa: [
+        { id: 'moradia', name: 'Habitação / Aluguer', color: 'bg-rose-500', icon: '🏠' },
+        { id: 'alimentacao', name: 'Alimentação', color: 'bg-amber-500', icon: '🍔' },
+        { id: 'transporte', name: 'Transportes', color: 'bg-blue-500', icon: '🚗' },
+        { id: 'lazer', name: 'Lazer e Viagens', color: 'bg-purple-500', icon: '✈️' },
+        { id: 'saude', name: 'Saúde', color: 'bg-red-500', icon: '🏥' },
+        { id: 'educacao', name: 'Educação', color: 'bg-violet-500', icon: '📚' },
+        { id: 'outros_desp', name: 'Outras Despesas', color: 'bg-slate-500', icon: '🛒' }
+      ]
+    };
+
+    const DEFAULT_BUDGETS = {
+      moradia: 1800,
+      alimentacao: 1000,
+      transporte: 400,
+      lazer: 500,
+      saude: 300,
+      educacao: 500,
+      outros_desp: 300
+    };
+
+    // ---------------------------------------------------------
+    // COMPONENTE DE ÍCONES VETORIAIS (SVG INTEGRADO)
+    // ---------------------------------------------------------
+    function Icon({ name, className = "w-4 h-4" }) {
+      const paths = {
+        dashboard: <path d="M3 3h7v9H3zm11 0h7v5h-7zm0 9h7v9h-7zm-11 4h7v5H3z"/>,
+        trendingUp: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
+        fileText: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></>,
+        pieChart: <><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></>,
+        piggyBank: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z" />,
+        target: <><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>,
+        dollarSign: <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>,
+        arrowUpRight: <><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></>,
+        arrowDownRight: <><line x1="7" y1="7" x2="17" y2="17"/><polyline points="17 7 17 17 7 17"/></>,
+        plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+        trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
+        search: <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+        alertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+        download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+        upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>,
+        checkCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
+        x: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+        helpCircle: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+        cloud: <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>,
+        cloudLightning: <><path d="M19 16.9A5 5 0 0 0 18 10h-1.26a8 8 0 1 0-11.62 8.58"/><polyline points="13 11 9 17 12 17 9 23"/></>,
+        loader: <><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><circle cx="12" cy="12" r="10" stroke-dasharray="10 5" className="animate-spin" /></>,
+        database: <><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></>,
+        copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>,
+        check: <polyline points="20 6 9 17 4 12"/>
+      };
+
+      return (
+        <svg 
+          xmlns="http://www.w3.org/2000/svg" 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="currentColor" 
+          strokeWidth="2" 
+          strokeLinecap="round" 
+          strokeLinejoin="round" 
+          className={className}
+        >
+          {paths[name] || null}
+        </svg>
+      );
+    }
+
+    // ---------------------------------------------------------
+    // COMPONENTE PRINCIPAL (APP)
+    // ---------------------------------------------------------
+    function App() {
+      // Estado de Autenticação e Ligação ao Firestore
+      const [user, setUser] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [dbStatus, setDbStatus] = useState('connecting'); // 'connecting' | 'synced' | 'error'
+      const [copied, setCopied] = useState(false);
+
+      // Dados da Aplicação Sincronizados
+      const [transactions, setTransactions] = useState([]);
+      const [budgets, setBudgets] = useState(DEFAULT_BUDGETS);
+      const [goals, setGoals] = useState([]);
+
+      // Estados de UI e Navegação
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [notification, setNotification] = useState(null);
+
+      // Formulários e Estados Interativos
+      const [newTx, setNewTx] = useState({ desc: '', amount: '', type: 'despesa', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
+      const [goalDeposit, setGoalDeposit] = useState({ goalId: '', amount: '' });
+      const [newGoal, setNewGoal] = useState({ name: '', target: '', current: '', deadline: '' });
+      const [budgetForm, setBudgetForm] = useState({ category: 'alimentacao', amount: '' });
+
+      // Estados do Simulador de Juros Compostos
+      const [simInitial, setSimInitial] = useState(5000);
+      const [simMonthly, setSimMonthly] = useState(500);
+      const [simRate, setSimRate] = useState(10.5);
+      const [simYears, setSimYears] = useState(5);
+
+      // Filtros do extrato de transações
+      const [searchQuery, setSearchQuery] = useState('');
+      const [filterType, setFilterType] = useState('all');
+      const [filterCategory, setFilterCategory] = useState('all');
+
+      const triggerNotification = (message, type = 'success') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 4000);
+      };
+
+      // Copiar regras de segurança do Firestore para o Clipboard
+      const handleCopyRules = () => {
+        const rulesText = `rules_version = '2';\n\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /artifacts/\$(appId)/users/{userId}/{collectionName}/{documentId} {\n      allow read, write: if request.auth != null && request.auth.uid == userId;\n    }\n    match /{document=**} {\n      allow read, write: if false;\n    }\n  }\n}`;
         
-        <!-- Sidebar de Navegação -->
-        <aside class="lg:col-span-3 flex flex-col gap-4">
-            
-            <!-- Menu de Abas -->
-            <div class="bg-white rounded-3xl p-4 shadow-sm border border-slate-200/60">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-3">Navegação Principal</p>
-                <nav class="flex flex-col gap-1.5" id="nav-menu">
-                    <button 
-                        onclick="switchTab('dashboard')" 
-                        id="btn-dashboard"
-                        class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left text-sm font-bold transition bg-emerald-50 text-emerald-850"
-                    >
-                        <i data-lucide="layout-dashboard" class="w-4.5 h-4.5"></i>
-                        <span>Dashboard</span>
-                    </button>
+        const tempInput = document.createElement('textarea');
+        tempInput.value = rulesText;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+        
+        setCopied(true);
+        triggerNotification('Regras de segurança copiadas com sucesso!');
+        setTimeout(() => setCopied(false), 3000);
+      };
 
-                    <button 
-                        onclick="switchTab('transactions')" 
-                        id="btn-transactions"
-                        class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-950 transition"
-                    >
-                        <i data-lucide="file-text" class="w-4.5 h-4.5"></i>
-                        <span>Lançamentos</span>
-                    </button>
+      // ---------------------------------------------------------
+      // MÉTODOS DE BACKUP/FALLBACK AUXILIAR (LOCAL STORAGE)
+      // ---------------------------------------------------------
+      const loadFromLocalStorage = () => {
+        try {
+          const localTx = localStorage.getItem('finpro_transactions');
+          const localBudgets = localStorage.getItem('finpro_budgets');
+          const localGoals = localStorage.getItem('finpro_goals');
+          
+          if (localTx) setTransactions(JSON.parse(localTx));
+          if (localBudgets) setBudgets(JSON.parse(localBudgets));
+          if (localGoals) setGoals(JSON.parse(localGoals));
+        } catch (e) {
+          console.error("Erro ao carregar do armazenamento local:", e);
+        }
+      };
 
-                    <button 
-                        onclick="switchTab('budgets')" 
-                        id="btn-budgets"
-                        class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-950 transition"
-                    >
-                        <i data-lucide="pie-chart" class="w-4.5 h-4.5"></i>
-                        <span>Limites & Teto</span>
-                    </button>
+      const saveToLocalStorage = (txs, budg, gls) => {
+        try {
+          if (txs) localStorage.setItem('finpro_transactions', JSON.stringify(txs));
+          if (budg) localStorage.setItem('finpro_budgets', JSON.stringify(budg));
+          if (gls) localStorage.setItem('finpro_goals', JSON.stringify(gls));
+        } catch (e) {
+          console.error("Erro ao gravar dados localmente:", e);
+        }
+      };
 
-                    <button 
-                        onclick="switchTab('goals')" 
-                        id="btn-goals"
-                        class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-950 transition"
-                    >
-                        <i data-lucide="piggy-bank" class="w-4.5 h-4.5"></i>
-                        <span>Metas do Cofre</span>
-                    </button>
+      // ---------------------------------------------------------
+      // 1. SETUP DE AUTENTICAÇÃO COM FALLBACK ROBUSTO (REGRA 3)
+      // ---------------------------------------------------------
+      useEffect(() => {
+        const initAuth = async () => {
+          try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              try {
+                await signInWithCustomToken(auth, __initial_auth_token);
+              } catch (tokenErr) {
+                console.warn("Token customizado incompatível. A efetuar login anónimo de contingência...", tokenErr);
+                await signInAnonymously(auth);
+              }
+            } else {
+              await signInAnonymously(auth);
+            }
+          } catch (err) {
+            console.error("Erro crítico na autenticação Firebase:", err);
+            setDbStatus('error');
+            loadFromLocalStorage();
+            triggerNotification('Falha de ligação à nuvem. A usar armazenamento local!', 'warning');
+          }
+        };
+        initAuth();
 
-                    <button 
-                        onclick="switchTab('simulator')" 
-                        id="btn-simulator"
-                        class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-950 transition"
-                    >
-                        <i data-lucide="target" class="w-4.5 h-4.5"></i>
-                        <span>Simulador Juros</span>
-                    </button>
-                </nav>
-            </div>
+        const unsubscribe = onAuthStateChanged(auth, (usr) => {
+          setUser(usr);
+          setLoading(false);
+        });
 
-            <!-- Resumo Financeiro Widget -->
-            <div class="bg-slate-950 text-white rounded-3xl p-6 shadow-xl border border-slate-900 space-y-5">
+        return () => unsubscribe();
+      }, []);
+
+      // ---------------------------------------------------------
+      // 2. SINCRONIZAÇÃO EM TEMPO REAL COM FIREBASE (REGRA 1, 3)
+      // ---------------------------------------------------------
+      useEffect(() => {
+        if (!user) return;
+
+        setLoading(true);
+        setDbStatus('connecting');
+
+        // Referências estritas conforme Regra 1
+        const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
+        const goalsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'goals');
+        const budgetsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', 'limits');
+
+        let active = true;
+
+        const handlePermissionError = (err, contexto) => {
+          console.warn(`Erro de permissão ou sincronização silencioso [${contexto}]:`, err);
+          if (active) {
+            setDbStatus('error');
+            setLoading(false);
+            loadFromLocalStorage();
+          }
+        };
+
+        // Regra 2: Obter transações e aplicar lógica de ordenação e filtros em memória no JavaScript
+        const unsubTx = onSnapshot(txCollectionRef, 
+          (snapshot) => {
+            if (!active) return;
+            const txList = [];
+            snapshot.forEach(docSnap => {
+              txList.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            txList.sort((a, b) => new Date(b.date) - new Date(a.date));
+            setTransactions(txList);
+            saveToLocalStorage(txList, null, null);
+            setDbStatus('synced');
+            setLoading(false);
+          },
+          (err) => handlePermissionError(err, 'transações')
+        );
+
+        // Ouvinte em tempo real para Metas de Poupança
+        const unsubGoals = onSnapshot(goalsCollectionRef, 
+          (snapshot) => {
+            if (!active) return;
+            const goalsList = [];
+            snapshot.forEach(docSnap => {
+              goalsList.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            setGoals(goalsList);
+            saveToLocalStorage(null, null, goalsList);
+          },
+          (err) => handlePermissionError(err, 'metas')
+        );
+
+        // Ouvinte em tempo real para Orçamentos (Limites)
+        const unsubBudgets = onSnapshot(budgetsDocRef, 
+          (docSnap) => {
+            if (!active) return;
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              setBudgets(data);
+              saveToLocalStorage(null, data, null);
+            } else {
+              setDoc(budgetsDocRef, DEFAULT_BUDGETS).catch(() => {});
+              setBudgets(DEFAULT_BUDGETS);
+              saveToLocalStorage(null, DEFAULT_BUDGETS, null);
+            }
+          },
+          (err) => handlePermissionError(err, 'orçamentos')
+        );
+
+        return () => {
+          active = false;
+          unsubTx();
+          unsubGoals();
+          unsubBudgets();
+        };
+      }, [user]);
+
+      // ---------------------------------------------------------
+      // 3. OPERAÇÕES DE GRAVAÇÃO (ESCRITAS COM COMPATIBILIDADE LOCAL)
+      // ---------------------------------------------------------
+
+      // Adicionar Transação
+      const handleAddTransaction = async (e) => {
+        e.preventDefault();
+        if (!newTx.desc.trim() || !newTx.amount || parseFloat(newTx.amount) <= 0) {
+          triggerNotification('Preencha os campos com valores válidos.', 'error');
+          return;
+        }
+
+        const txData = {
+          desc: newTx.desc.trim(),
+          amount: parseFloat(newTx.amount),
+          type: newTx.type,
+          category: newTx.category,
+          date: newTx.date || new Date().toISOString().split('T')[0],
+          createdAt: new Date().toISOString()
+        };
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
+            await addDoc(txCollectionRef, txData);
+            triggerNotification('Transação registada na nuvem!');
+          } catch (err) {
+            console.error("Erro ao guardar na nuvem, a aplicar localmente:", err);
+            saveTxLocally(txData);
+          }
+        } else {
+          saveTxLocally(txData);
+        }
+
+        setNewTx({ desc: '', amount: '', type: 'despesa', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
+      };
+
+      const saveTxLocally = (txData) => {
+        const localItem = { id: Date.now().toString(), ...txData };
+        const updated = [localItem, ...transactions];
+        setTransactions(updated);
+        saveToLocalStorage(updated, null, null);
+        triggerNotification('Guardado localmente (Modo Offline)!');
+      };
+
+      // Remover Transação
+      const handleDeleteTransaction = async (id) => {
+        if (dbStatus === 'synced' && user) {
+          try {
+            const txDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', id);
+            await deleteDoc(txDocRef);
+            triggerNotification('Transação removida da nuvem!', 'warning');
+            return;
+          } catch (err) {
+            console.error("Erro ao apagar do Firebase:", err);
+          }
+        }
+        
+        const updated = transactions.filter(t => t.id !== id);
+        setTransactions(updated);
+        saveToLocalStorage(updated, null, null);
+        triggerNotification('Transação apagada localmente!', 'warning');
+      };
+
+      // Criar Meta de Poupança
+      const handleCreateGoal = async (e) => {
+        e.preventDefault();
+        const target = parseFloat(newGoal.target);
+        const current = parseFloat(newGoal.current) || 0;
+
+        if (!newGoal.name.trim() || isNaN(target) || target <= 0) {
+          triggerNotification('Defina um nome e valor de objetivo válidos.', 'error');
+          return;
+        }
+
+        const goalData = {
+          name: newGoal.name.trim(),
+          target,
+          current,
+          deadline: newGoal.deadline || new Date().toISOString().split('T')[0]
+        };
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const goalsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'goals');
+            await addDoc(goalsCollectionRef, goalData);
+            triggerNotification('Meta de poupança sincronizada!');
+          } catch (err) {
+            console.error(err);
+            saveGoalLocally(goalData);
+          }
+        } else {
+          saveGoalLocally(goalData);
+        }
+
+        setNewGoal({ name: '', target: '', current: '', deadline: '' });
+      };
+
+      const saveGoalLocally = (goalData) => {
+        const localGoal = { id: Date.now().toString(), ...goalData };
+        const updated = [...goals, localGoal];
+        setGoals(updated);
+        saveToLocalStorage(null, null, updated);
+        triggerNotification('Meta de poupança adicionada localmente!');
+      };
+
+      // Depositar / Aportar em Meta
+      const handleGoalDeposit = async (e) => {
+        e.preventDefault();
+        const amt = parseFloat(goalDeposit.amount);
+        if (!goalDeposit.goalId || isNaN(amt) || amt <= 0) {
+          triggerNotification('Introduza um montante de depósito válido.', 'error');
+          return;
+        }
+
+        const selectedGoal = goals.find(g => g.id === goalDeposit.goalId);
+        if (!selectedGoal) return;
+
+        const newCurrent = Math.min(selectedGoal.target, selectedGoal.current + amt);
+
+        const autoTx = {
+          desc: `Reforço Meta: ${selectedGoal.name}`,
+          amount: amt,
+          type: 'despesa',
+          category: 'outros_desp',
+          date: new Date().toISOString().split('T')[0],
+          createdAt: new Date().toISOString()
+        };
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const goalDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'goals', selectedGoal.id);
+            await updateDoc(goalDocRef, { current: newCurrent });
+
+            const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
+            await addDoc(txCollectionRef, autoTx);
+
+            triggerNotification(`R$ ${amt.toFixed(2)} depositados na meta!`);
+            return;
+          } catch (err) {
+            console.error(err);
+          }
+        }
+
+        // Fallback Local
+        const updatedGoals = goals.map(g => g.id === selectedGoal.id ? { ...g, current: newCurrent } : g);
+        setGoals(updatedGoals);
+        
+        const localTx = { id: Date.now().toString(), ...autoTx };
+        const updatedTxs = [localTx, ...transactions];
+        setTransactions(updatedTxs);
+
+        saveToLocalStorage(updatedTxs, null, updatedGoals);
+        setGoalDeposit({ goalId: '', amount: '' });
+        triggerNotification(`Reforço de R$ ${amt.toFixed(2)} registado localmente!`);
+      };
+
+      // Excluir Meta de Poupança
+      const handleDeleteGoal = async (id) => {
+        if (dbStatus === 'synced' && user) {
+          try {
+            const goalDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'goals', id);
+            await deleteDoc(goalDocRef);
+            triggerNotification('Meta de poupança removida da nuvem.', 'warning');
+            return;
+          } catch (err) {
+            console.error(err);
+          }
+        }
+
+        const updated = goals.filter(g => g.id !== id);
+        setGoals(updated);
+        saveToLocalStorage(null, null, updated);
+        triggerNotification('Meta de poupança removida localmente.', 'warning');
+      };
+
+      // Atualizar Limite de Orçamento
+      const handleSetBudget = async (e) => {
+        e.preventDefault();
+        const amt = parseFloat(budgetForm.amount);
+        if (isNaN(amt) || amt <= 0) {
+          triggerNotification('Defina um limite de gastos válido.', 'error');
+          return;
+        }
+
+        const updatedBudgets = {
+          ...budgets,
+          [budgetForm.category]: amt
+        };
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const budgetsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', 'limits');
+            await setDoc(budgetsDocRef, updatedBudgets);
+            triggerNotification('Limite de despesa atualizado no Firebase!');
+          } catch (err) {
+            console.error(err);
+            saveBudgetLocally(updatedBudgets);
+          }
+        } else {
+          saveBudgetLocally(updatedBudgets);
+        }
+
+        setBudgetForm({ category: 'moradia', amount: '' });
+      };
+
+      const saveBudgetLocally = (updatedBudgets) => {
+        setBudgets(updatedBudgets);
+        saveToLocalStorage(null, updatedBudgets, null);
+        triggerNotification('Limite de despesa atualizado localmente!');
+      };
+
+      // Gerar Dados de Demonstração
+      const handleGenerateMockData = async () => {
+        const mockTxs = [
+          { desc: 'Vencimento / Salário', amount: 5500, type: 'receita', category: 'salario', date: '2026-05-01' },
+          { desc: 'Renda da Habitação', amount: 1600, type: 'despesa', category: 'moradia', date: '2026-05-02' },
+          { desc: 'Supermercado e Alimentação', amount: 850, type: 'despesa', category: 'alimentacao', date: '2026-05-03' },
+          { desc: 'Projeto Freelance Front-End', amount: 1200, type: 'receita', category: 'freelance', date: '2026-05-10' }
+        ];
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
+            for (const m of mockTxs) {
+              await addDoc(txCollectionRef, { ...m, createdAt: new Date().toISOString() });
+            }
+            triggerNotification('Dados de teste salvos na nuvem!');
+            return;
+          } catch (err) {
+            console.error(err);
+          }
+        }
+
+        const localMockTxs = mockTxs.map((m, idx) => ({ id: `mock-${idx}`, ...m, createdAt: new Date().toISOString() }));
+        setTransactions(localMockTxs);
+        saveToLocalStorage(localMockTxs, null, null);
+        triggerNotification('Dados demonstrativos carregados localmente!');
+      };
+
+      // ---------------------------------------------------------
+      // 4. MÉTODOS DE CÁLCULO E SIMULAÇÃO
+      // ---------------------------------------------------------
+      const stats = useMemo(() => {
+        let income = 0;
+        let expense = 0;
+        
+        transactions.forEach(t => {
+          const amt = parseFloat(t.amount) || 0;
+          if (t.type === 'receita') {
+            income += amt;
+          } else {
+            expense += amt;
+          }
+        });
+
+        const balance = income - expense;
+        const savingsRate = income > 0 ? Math.max(0, Math.min(100, ((income - expense) / income) * 100)) : 0;
+
+        const categoryTotals = {};
+        transactions.filter(t => t.type === 'despesa').forEach(t => {
+          categoryTotals[t.category] = (categoryTotals[t.category] || 0) + parseFloat(t.amount);
+        });
+
+        return { income, expense, balance, savingsRate, categoryTotals };
+      }, [transactions]);
+
+      // Alertas Inteligentes de Saúde Financeira
+      const financialTips = useMemo(() => {
+        const tips = [];
+        if (stats.savingsRate > 20) {
+          tips.push({ type: 'success', text: `Excelente! Conseguiu poupar ${stats.savingsRate.toFixed(1)}% do seu orçamento. Considere investir em longo prazo.` });
+        } else if (stats.savingsRate > 0) {
+          tips.push({ type: 'info', text: `A sua taxa de poupança situa-se em ${stats.savingsRate.toFixed(1)}%. Tente poupar um pouco mais para atingir a meta recomendada de 20%.` });
+        } else if (transactions.length > 0) {
+          tips.push({ type: 'danger', text: `Atenção: As suas despesas superaram as receitas este mês. Avalie conter despesas não essenciais.` });
+        }
+
+        Object.keys(budgets).forEach(cat => {
+          const limit = budgets[cat];
+          const spent = stats.categoryTotals[cat] || 0;
+          const catObj = CATEGORIES.despesa.find(c => c.id === cat);
+          if (catObj && spent > limit && limit > 0) {
+            tips.push({ type: 'danger', text: `Orçamento Estourado: Ultrapassou o limite em "${catObj.name}" por R$ ${(spent - limit).toFixed(2)}!` });
+          } else if (catObj && limit > 0 && spent > limit * 0.8) {
+            tips.push({ type: 'warning', text: `Alerta: Os custos com "${catObj.name}" atingiram mais de 80% do teto definido.` });
+          }
+        });
+
+        return tips;
+      }, [stats, budgets, transactions]);
+
+      // Simulador de Juros Compostos
+      const investmentSimulation = useMemo(() => {
+        const monthlyRate = Math.pow(1 + (simRate / 100), 1 / 12) - 1;
+        const totalMonths = simYears * 12;
+        let balance = simInitial;
+        let totalInvested = simInitial;
+        const timeline = [];
+
+        for (let month = 1; month <= totalMonths; month++) {
+          const interestEarned = balance * monthlyRate;
+          balance += interestEarned + simMonthly;
+          totalInvested += simMonthly;
+
+          if (month % 12 === 0 || month === totalMonths) {
+            timeline.push({
+              year: month / 12,
+              total: Math.round(balance),
+              invested: Math.round(totalInvested),
+              gains: Math.round(balance - totalInvested)
+            });
+          }
+        }
+
+        return { finalValue: balance, totalInvested, totalGains: balance - totalInvested, timeline };
+      }, [simInitial, simMonthly, simRate, simYears]);
+
+      // Filtros Rápidos das Transações em Memória (Evita índices Firestore complexos)
+      const filteredTransactions = useMemo(() => {
+        return transactions.filter(t => {
+          const matchesSearch = t.desc.toLowerCase().includes(searchQuery.toLowerCase());
+          const matchesType = filterType === 'all' || t.type === filterType;
+          const matchesCategory = filterCategory === 'all' || t.category === filterCategory;
+          return matchesSearch && matchesType && matchesCategory;
+        });
+      }, [transactions, searchQuery, filterType, filterCategory]);
+
+      return (
+        <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+          
+          {/* Cabeçalho */}
+          <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-md">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-emerald-500 p-2 rounded-xl text-slate-900 shadow-lg">
+                  <Icon name="trendingUp" className="w-6 h-6" />
+                </div>
                 <div>
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Saldo Disponível</span>
-                    <h3 id="aside-balance" class="text-3xl font-black text-emerald-400 mt-1">R$ 0,00</h3>
+                  <h1 className="text-xl font-extrabold tracking-tight">FinançasPro</h1>
+                  <p className="text-xs text-slate-400">Motor de Sincronização em Tempo Real</p>
                 </div>
+              </div>
 
-                <div class="grid grid-cols-2 gap-3 pt-4 border-t border-slate-900">
-                    <div>
-                        <span class="text-[9px] uppercase font-bold text-slate-400">Total Receitas</span>
-                        <p id="aside-income" class="text-sm font-extrabold text-emerald-400 mt-0.5">R$ 0,00</p>
-                    </div>
-                    <div>
-                        <span class="text-[9px] uppercase font-bold text-slate-400">Total Despesas</span>
-                        <p id="aside-expense" class="text-sm font-extrabold text-rose-400 mt-0.5">R$ 0,00</p>
-                    </div>
-                </div>
-
-                <div class="space-y-1.5 pt-2">
-                    <div class="flex justify-between items-center text-xs text-slate-400">
-                        <span>Eficiência de Poupança</span>
-                        <span id="aside-savings-pct" class="font-extrabold text-white">0%</span>
-                    </div>
-                    <div class="w-full bg-slate-900 rounded-full h-2">
-                        <div id="aside-savings-bar" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
-                    </div>
-                </div>
+              {/* Status de Conectividade */}
+              <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700">
+                {dbStatus === 'connecting' && (
+                  <>
+                    <Icon name="loader" className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                    <span className="text-amber-400">A estabelecer sincronização...</span>
+                  </>
+                )}
+                {dbStatus === 'synced' && (
+                  <>
+                    <Icon name="cloud" className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-400">Firebase Conectado</span>
+                  </>
+                )}
+                {dbStatus === 'error' && (
+                  <>
+                    <Icon name="cloudLightning" className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                    <span className="text-amber-500">Apenas Local (Segurança Firestore Ativa)</span>
+                  </>
+                )}
+              </div>
             </div>
-        </aside>
+          </header>
 
-        <!-- Conteúdo Principal Dinâmico -->
-        <main class="lg:col-span-9 space-y-6">
+          <div className="max-w-7xl mx-auto px-4 py-6 flex-1 w-full flex flex-col">
+            
+            {/* Banner Informativo sobre as Regras do Firestore */}
+            {dbStatus === 'error' && (
+              <div className="bg-amber-50 border-l-4 border-amber-500 p-5 rounded-2xl mb-6 shadow-sm">
+                <div className="flex flex-col md:flex-row gap-4 items-start justify-between">
+                  <div className="flex gap-3">
+                    <Icon name="alertTriangle" className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-slate-700 space-y-1.5">
+                      <p className="font-bold text-sm text-slate-900">Configuração das Regras do Firestore Pendente</p>
+                      <p>O seu banco de dados do Firebase Cloud Firestore está a recusar acessos externos porque as regras de segurança padrão (<code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900">if false;</code>) estão ativas.</p>
+                      <p className="font-semibold text-amber-900">Siga estes passos rápidos para resolver:</p>
+                      <ol className="list-decimal list-inside space-y-1 text-slate-600 bg-white/70 p-3 rounded-xl border border-amber-200">
+                        <li>Inicie sessão no Console do Firebase &gt; Cloud Firestore &gt; guia de <strong>Regras (Rules)</strong>.</li>
+                        <li>Clique no botão à direita para copiar o modelo de regras otimizado.</li>
+                        <li>Substitua o conteúdo no console do Firebase e clique em <strong>Publicar (Publish)</strong>.</li>
+                      </ol>
+                      <p className="text-[10px] text-slate-400 italic pt-1">Até que as regras sejam aplicadas, as suas alterações estão a ser guardadas localmente (localStorage).</p>
+                    </div>
+                  </div>
 
-            <!-- ================= ABA: DASHBOARD ================= -->
-            <section id="tab-dashboard" class="space-y-6">
+                  <button 
+                    onClick={handleCopyRules}
+                    className="w-full md:w-auto shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow transition"
+                  >
+                    <Icon name={copied ? 'check' : 'copy'} className="w-4 h-4" />
+                    <span>{copied ? 'Copiado!' : 'Copiar Regras Prontas'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full flex-1">
+              
+              {/* Navegação Lateral */}
+              <aside className="lg:col-span-3 flex flex-col gap-3">
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 px-3 mb-2">Menu de Navegação</p>
+                  <nav className="flex flex-col gap-1">
+                    <button 
+                      onClick={() => setActiveTab('dashboard')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
+                        activeTab === 'dashboard' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <Icon name="dashboard" className="w-4 h-4" />
+                      Painel de Controlo
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveTab('transactions')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
+                        activeTab === 'transactions' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <Icon name="fileText" className="w-4 h-4" />
+                      Extrato de Transações ({transactions.length})
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveTab('budgets')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
+                        activeTab === 'budgets' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <Icon name="pieChart" className="w-4 h-4" />
+                      Limites de Orçamento
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveTab('goals')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
+                        activeTab === 'goals' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <Icon name="piggyBank" className="w-4 h-4" />
+                      Objetivos / Poupança ({goals.length})
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveTab('simulator')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
+                        activeTab === 'simulator' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <Icon name="target" className="w-4 h-4" />
+                      Simulador de Juros
+                    </button>
+                  </nav>
+                </div>
+
+                {/* Bloco de Diagnóstico */}
+                <div className="bg-white rounded-2xl p-4 border border-slate-200 text-xs text-slate-500 space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                    <Icon name="database" className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Isolamento e Segurança</span>
+                  </div>
+                  <p className="break-all font-mono text-[10px]">Utilizador UID: {user?.uid || 'A carregar...'}</p>
+                  <p className="italic text-[10px]">O seu ID anónimo garante que todas as transações, orçamentos e limites são completamente privados.</p>
+                </div>
+              </aside>
+
+              {/* Área do Separador Ativo */}
+              <main className="lg:col-span-9 flex flex-col gap-6">
                 
-                <!-- Cards de Estatísticas Rápidas -->
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <!-- Card Saldo -->
-                    <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex items-center justify-between">
-                        <div class="space-y-1">
-                            <span class="text-xs font-bold text-slate-400 uppercase">Saldo Consolidado</span>
-                            <h4 id="card-balance" class="text-2xl font-black text-slate-900">R$ 0,00</h4>
-                            <p class="text-[11px] text-slate-400">Soma líquida atual</p>
-                        </div>
-                        <div class="p-3 bg-slate-50 rounded-2xl text-slate-650 flex items-center justify-center">
-                            <i data-lucide="wallet" class="w-6 h-6"></i>
-                        </div>
-                    </div>
-
-                    <!-- Card Receita -->
-                    <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex items-center justify-between">
-                        <div class="space-y-1">
-                            <span class="text-xs font-bold text-slate-400 uppercase">Receitas Recorrentes</span>
-                            <h4 id="card-income" class="text-2xl font-black text-emerald-600">R$ 0,00</h4>
-                            <p class="text-[11px] text-slate-400">Total de entradas</p>
-                        </div>
-                        <div class="p-3 bg-emerald-50 rounded-2xl text-emerald-650 flex items-center justify-center">
-                            <i data-lucide="arrow-up-right" class="w-6 h-6"></i>
-                        </div>
-                    </div>
-
-                    <!-- Card Despesa -->
-                    <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex items-center justify-between">
-                        <div class="space-y-1">
-                            <span class="text-xs font-bold text-slate-400 uppercase">Despesas Totais</span>
-                            <h4 id="card-expense" class="text-2xl font-black text-rose-600">R$ 0,00</h4>
-                            <p class="text-[11px] text-slate-400">Total de saídas</p>
-                        </div>
-                        <div class="p-3 bg-rose-50 rounded-2xl text-rose-650 flex items-center justify-center">
-                            <i data-lucide="arrow-down-right" class="w-6 h-6"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Painel de Análise e Insights -->
-                <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+                {/* 1. SEPARADOR: PAINEL DE CONTROLO */}
+                {activeTab === 'dashboard' && (
+                  <div className="space-y-6">
                     
-                    <!-- Distribuição Gráfica de Gastos (Custom SVG Bars) -->
-                    <div class="md:col-span-7 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex flex-col justify-between">
+                    {/* Sumários Financeiros */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
-                            <h3 class="font-extrabold text-slate-900 text-lg mb-1 flex items-center gap-2">
-                                <i data-lucide="pie-chart" class="text-emerald-500 w-5 h-5"></i>
-                                Distribuição de Despesas
-                            </h3>
-                            <p class="text-xs text-slate-400 mb-6">Proporção de gastos por categoria no mês</p>
-
-                            <!-- Lista dinâmica de barras de categorias -->
-                            <div id="chart-categories-list" class="space-y-4">
-                                <!-- Preenchido dinamicamente via JS -->
-                            </div>
+                          <p className="text-xs font-semibold text-slate-400 uppercase">Saldo Consolidado</p>
+                          <p className={`text-2xl font-black ${stats.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                            R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">Sincronizado na Nuvem</p>
                         </div>
-
-                        <!-- Mini gráfico em pílula consolidada -->
-                        <div class="pt-5 border-t border-slate-100 mt-6">
-                            <div id="chart-pill-container" class="flex h-3.5 rounded-full overflow-hidden bg-slate-100">
-                                <!-- Segmentos preenchidos dinamicamente -->
-                            </div>
+                        <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                          <Icon name="dollarSign" className="w-5 h-5" />
                         </div>
+                      </div>
+
+                      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-400 uppercase">Receitas</p>
+                          <p className="text-2xl font-black text-emerald-600">
+                            + R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">Total acumulado este mês</p>
+                        </div>
+                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                          <Icon name="arrowUpRight" className="w-5 h-5" />
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-400 uppercase">Despesas</p>
+                          <p className="text-2xl font-black text-rose-600">
+                            - R$ {stats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">Total faturado no mês</p>
+                        </div>
+                        <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+                          <Icon name="arrowDownRight" className="w-5 h-5" />
+                        </div>
+                      </div>
                     </div>
 
-                    <!-- Painel de Recomendações e Dicas Inteligentes -->
-                    <div class="md:col-span-5 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex flex-col justify-between">
-                        <div>
-                            <h3 class="font-extrabold text-slate-900 text-lg mb-1 flex items-center gap-2">
-                                <i data-lucide="sparkles" class="text-amber-500 w-5 h-5"></i>
-                                Assistente de Finanças
-                            </h3>
-                            <p class="text-xs text-slate-400 mb-4">Análise em tempo real do seu perfil</p>
-
-                            <div id="insights-container" class="space-y-3">
-                                <!-- Insights automáticos gerados por JS -->
-                            </div>
-                        </div>
-
-                        <div class="pt-4 border-t border-slate-100 mt-4">
-                            <p class="text-[11px] text-slate-400 text-center italic">
-                                Dicas baseadas no seu orçamento e metas atuais.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Cadastro Rápido e Histórico Recente -->
-                <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
-                    
-                    <!-- Lançamento Rápido -->
-                    <div class="md:col-span-5 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60">
-                        <h3 class="font-extrabold text-slate-900 text-lg mb-4 flex items-center gap-2">
-                            <i data-lucide="plus-circle" class="text-emerald-500 w-5 h-5"></i>
-                            Lançamento Rápido
+                    {/* Gráficos de Categorias e Dicas */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      
+                      {/* Despesas por Categoria */}
+                      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+                        <h3 className="font-extrabold text-slate-900 text-base mb-4 flex items-center gap-2">
+                          <Icon name="pieChart" className="w-5 h-5 text-emerald-600" />
+                          Custos por Categoria
                         </h3>
 
-                        <form onsubmit="addTransaction(event)" class="space-y-3.5">
+                        {stats.expense === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center space-y-3">
+                            <p className="text-xs">Não existem despesas registadas no banco de dados.</p>
+                            <button 
+                              onClick={handleGenerateMockData}
+                              className="text-xs bg-slate-900 text-white font-bold px-4 py-2 rounded-xl hover:bg-slate-850"
+                            >
+                              Carregar Base Demonstrativa
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {CATEGORIES.despesa.map(cat => {
+                              const spent = stats.categoryTotals[cat.id] || 0;
+                              const percentage = stats.expense > 0 ? (spent / stats.expense) * 100 : 0;
+                              if (spent === 0) return null;
+
+                              return (
+                                <div key={cat.id} className="space-y-1">
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="font-medium flex items-center gap-1.5">
+                                      <span>{cat.icon}</span>
+                                      <span>{cat.name}</span>
+                                    </span>
+                                    <span className="font-bold text-slate-700">
+                                      R$ {spent.toFixed(2)} ({percentage.toFixed(0)}%)
+                                    </span>
+                                  </div>
+                                  <div className="w-full bg-slate-100 rounded-full h-2">
+                                    <div className={`h-2 rounded-full ${cat.color}`} style={{ width: `${percentage}%` }}></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Notificações do Planeador */}
+                      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
+                        <div>
+                          <h3 className="font-extrabold text-slate-900 text-base mb-4 flex items-center gap-2">
+                            <Icon name="helpCircle" className="w-5 h-5 text-emerald-600" />
+                            Avisos do Planeador
+                          </h3>
+
+                          <div className="space-y-3.5">
+                            {financialTips.length === 0 ? (
+                              <p className="text-slate-400 text-xs">A sua saúde financeira está excelente. Continue com a consistência de registo!</p>
+                            ) : (
+                              financialTips.map((tip, idx) => (
+                                <div key={idx} className={`p-3 rounded-xl text-xs border flex gap-3 ${
+                                  tip.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-800' :
+                                  tip.type === 'warning' ? 'bg-amber-50 border-amber-100 text-amber-800' : 'bg-rose-50 border-rose-100 text-rose-800'
+                                }`}>
+                                  <span>{tip.type === 'success' ? '🌟' : '⚠️'}</span>
+                                  <span>{tip.text}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 pt-4 border-t border-slate-100 text-[10px] text-center text-slate-400">
+                          Dados processados na memória local sem impacto na quota do Cloud Firestore.
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Registos Rápidos */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                      
+                      {/* Adicionar Transação */}
+                      <div className="md:col-span-4 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+                        <h3 className="font-extrabold text-slate-900 text-base mb-4">Novo Registo</h3>
+                        <form onSubmit={handleAddTransaction} className="space-y-3">
                           <div>
-                            <label class="block text-xs font-bold text-slate-500 mb-1.5">Descrição do Lançamento</label>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Descrição</label>
                             <input 
                               type="text" 
-                              id="tx-desc"
-                              placeholder="Ex: Supermercado Assaí"
-                              class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                              placeholder="Ex: Supermercado, Prémio"
+                              value={newTx.desc}
+                              onChange={e => setNewTx(prev => ({ ...prev, desc: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                               required
-                            >
+                            />
                           </div>
 
-                          <div class="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label class="block text-xs font-bold text-slate-500 mb-1.5">Valor (R$)</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Montante (R$)</label>
                               <input 
                                 type="number" 
-                                id="tx-amount"
                                 step="0.01"
-                                placeholder="0,00"
-                                class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                placeholder="0.00"
+                                value={newTx.amount}
+                                onChange={e => setNewTx(prev => ({ ...prev, amount: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
                                 required
-                              >
+                              />
                             </div>
                             <div>
-                              <label class="block text-xs font-bold text-slate-500 mb-1.5">Data</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data</label>
                               <input 
-                                type="date" 
-                                id="tx-date"
-                                class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                                required
-                              >
+                                type="date"
+                                value={newTx.date}
+                                onChange={e => setNewTx(prev => ({ ...prev, date: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
+                              />
                             </div>
                           </div>
 
-                          <div class="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label class="block text-xs font-bold text-slate-500 mb-1.5">Fluxo</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Tipo de Registo</label>
                               <select 
-                                id="tx-type" 
-                                onchange="updateCategorySelect()"
-                                class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none font-semibold bg-slate-50"
+                                value={newTx.type}
+                                onChange={e => {
+                                  const nt = e.target.value;
+                                  setNewTx(prev => ({
+                                    ...prev,
+                                    type: nt,
+                                    category: nt === 'receita' ? CATEGORIES.receita[0].id : CATEGORIES.despesa[0].id
+                                  }));
+                                }}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none"
                               >
                                 <option value="despesa">🔴 Despesa</option>
                                 <option value="receita">🟢 Receita</option>
                               </select>
                             </div>
-
                             <div>
-                              <label class="block text-xs font-bold text-slate-500 mb-1.5">Categoria</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Categoria</label>
                               <select 
-                                id="tx-category"
-                                class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none font-semibold bg-slate-50"
+                                value={newTx.category}
+                                onChange={e => setNewTx(prev => ({ ...prev, category: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none"
                               >
-                                <!-- Preenchido dinamicamente de acordo com o fluxo -->
+                                {CATEGORIES[newTx.type].map(c => (
+                                  <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                                ))}
                               </select>
                             </div>
                           </div>
 
                           <button 
                             type="submit"
-                            class="w-full mt-3 bg-slate-950 text-white font-bold py-3 px-4 rounded-2xl hover:bg-slate-850 transition shadow-lg text-sm flex items-center justify-center gap-2"
+                            className="w-full mt-2 bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-800 transition"
                           >
-                            <i data-lucide="check" class="w-4 h-4"></i>
-                            <span>Salvar Transação</span>
+                            Confirmar Lançamento
                           </button>
                         </form>
-                    </div>
+                      </div>
 
-                    <!-- Últimos Lançamentos -->
-                    <div class="md:col-span-7 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex flex-col justify-between">
-                        <div>
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="font-extrabold text-slate-900 text-lg flex items-center gap-2">
-                                    <i data-lucide="clock" class="text-emerald-500 w-5 h-5"></i>
-                                    Últimas Transações
-                                </h3>
-                                <button onclick="switchTab('transactions')" class="text-xs text-emerald-600 font-bold hover:underline">Ver todas</button>
-                            </div>
-
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left text-sm">
-                                    <thead>
-                                        <tr class="border-b border-slate-100 text-slate-400 font-semibold text-xs uppercase">
-                                            <th class="pb-3">Descrição / Cat.</th>
-                                            <th class="pb-3">Data</th>
-                                            <th class="pb-3 text-right">Valor</th>
-                                            <th class="pb-3"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="recent-transactions-tbody" class="divide-y divide-slate-100">
-                                        <!-- Renderizado dinamicamente -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </section>
-
-            <!-- ================= ABA: TRANSAÇÕES (EXTRATO) ================= -->
-            <section id="tab-transactions" class="hidden bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 space-y-6">
-                <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                    <div>
-                        <h2 class="text-xl font-extrabold text-slate-900">Extrato de Contas</h2>
-                        <p class="text-sm text-slate-400">Gerencie todos os lançamentos históricos, faça buscas e filtre categorias.</p>
-                    </div>
-
-                    <!-- Filtros de Busca -->
-                    <div class="flex flex-wrap gap-2 w-full md:w-auto">
-                        <div class="relative flex-1 md:flex-initial">
-                            <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400 pointer-events-none"></i>
-                            <input 
-                                type="text" 
-                                id="filter-search"
-                                placeholder="Buscar..."
-                                oninput="renderTransactionsList()"
-                                class="pl-10 pr-4 py-2.5 w-full border border-slate-200 rounded-xl text-sm focus:outline-none"
-                            >
+                      {/* Lista de transações */}
+                      <div className="md:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+                        <div className="flex justify-between items-center mb-4">
+                          <h3 className="font-extrabold text-slate-900 text-base">Últimos Lançamentos Sincronizados</h3>
+                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-600 font-bold hover:underline">
+                            Ver Extrato
+                          </button>
                         </div>
 
-                        <select 
-                            id="filter-type"
-                            onchange="renderTransactionsList()"
-                            class="border border-slate-250 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none"
-                        >
-                            <option value="all">Todos os fluxos</option>
-                            <option value="receita">🟢 Receitas</option>
-                            <option value="despesa">🔴 Despesas</option>
-                        </select>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-slate-400 font-semibold">
+                                <th className="pb-3 text-[10px] uppercase">Descrição</th>
+                                <th className="pb-3 text-[10px] uppercase">Data</th>
+                                <th className="pb-3 text-[10px] uppercase text-right">Valor</th>
+                                <th className="pb-3"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {transactions.slice(0, 5).map(t => {
+                                const isInc = t.type === 'receita';
+                                const catList = isInc ? CATEGORIES.receita : CATEGORIES.despesa;
+                                const catObj = catList.find(c => c.id === t.category) || { name: 'Geral', icon: '💸' };
 
-                        <select 
-                            id="filter-category"
-                            onchange="renderTransactionsList()"
-                            class="border border-slate-250 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none max-w-[150px]"
-                        >
-                            <option value="all">Todas as Categorias</option>
-                            <!-- Preenchido dinamicamente via JS -->
-                        </select>
+                                return (
+                                  <tr key={t.id} className="hover:bg-slate-50/50">
+                                    <td className="py-3">
+                                      <div className="font-semibold text-slate-800">{t.desc}</div>
+                                      <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                        <span>{catObj.icon}</span>
+                                        <span>{catObj.name}</span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 text-slate-500">{new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</td>
+                                    <td className={`py-3 font-extrabold text-right ${isInc ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                      {isInc ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </td>
+                                    <td className="py-3 text-right">
+                                      <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600 p-1">
+                                        <Icon name="trash" className="w-4 h-4" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+
+                              {transactions.length === 0 && (
+                                <tr>
+                                  <td colSpan="4" className="py-8 text-center text-slate-400 italic">
+                                    Sem dados registados na nuvem. Comece por adicionar um lançamento!
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
                     </div>
-                </div>
 
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm">
+                  </div>
+                )}
+
+                {/* 2. SEPARADOR: EXTRATO COMPLETO */}
+                {activeTab === 'transactions' && (
+                  <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                      <div>
+                        <h2 className="text-lg font-black text-slate-900">Extrato Consolidado</h2>
+                        <p className="text-xs text-slate-400">Consulte, pesquise e filtre todas as suas movimentações de conta.</p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <div className="relative">
+                          <Icon name="search" className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                          <input 
+                            type="text" 
+                            placeholder="Procurar transação..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="pl-8 pr-4 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none"
+                          />
+                        </div>
+
+                        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="border border-slate-200 text-xs rounded-xl px-2.5 py-2">
+                          <option value="all">Filtro de Fluxo</option>
+                          <option value="receita">Receitas</option>
+                          <option value="despesa">Despesas</option>
+                        </select>
+
+                        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="border border-slate-200 text-xs rounded-xl px-2.5 py-2">
+                          <option value="all">Categorias</option>
+                          {CATEGORIES.receita.map(c => <option key={c.id} value={c.id}>🟢 {c.name}</option>)}
+                          {CATEGORIES.despesa.map(c => <option key={c.id} value={c.id}>🔴 {c.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
                         <thead>
-                            <tr class="border-b border-slate-150 text-slate-400 font-semibold text-xs uppercase">
-                                <th class="pb-4">Descrição</th>
-                                <th class="pb-4">Categoria</th>
-                                <th class="pb-4">Data</th>
-                                <th class="pb-4 text-right">Valor</th>
-                                <th class="pb-4 text-center">Ações</th>
-                            </tr>
+                          <tr className="border-b border-slate-100 text-slate-400 font-semibold">
+                            <th className="pb-3">Descrição</th>
+                            <th className="pb-3">Categoria</th>
+                            <th className="pb-3">Data de Registo</th>
+                            <th className="pb-3 text-right">Montante</th>
+                            <th className="pb-3"></th>
+                          </tr>
                         </thead>
-                        <tbody id="full-transactions-tbody" class="divide-y divide-slate-100">
-                            <!-- Injetado dinamicamente -->
+                        <tbody className="divide-y divide-slate-50">
+                          {filteredTransactions.map(t => {
+                            const isInc = t.type === 'receita';
+                            const catList = isInc ? CATEGORIES.receita : CATEGORIES.despesa;
+                            const catObj = catList.find(c => c.id === t.category) || { name: 'Outros', icon: '💸' };
+
+                            return (
+                              <tr key={t.id} className="hover:bg-slate-50/50">
+                                <td className="py-4 font-semibold text-slate-900">{t.desc}</td>
+                                <td className="py-4">
+                                  <span className="inline-flex items-center gap-1.5 bg-slate-50 border px-2.5 py-0.5 rounded-full font-medium">
+                                    <span>{catObj.icon}</span>
+                                    <span>{catObj.name}</span>
+                                  </span>
+                                </td>
+                                <td className="py-4 text-slate-500">{new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</td>
+                                <td className={`py-4 font-extrabold text-right ${isInc ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                  {isInc ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="py-4 text-right">
+                                  <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600">
+                                    <Icon name="trash" className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
-                    </table>
-                </div>
-            </section>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
-            <!-- ================= ABA: ORÇAMENTOS (LIMITES) ================= -->
-            <section id="tab-budgets" class="hidden space-y-6">
-                <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
-                    
-                    <!-- Definir Limite -->
-                    <div class="md:col-span-4 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60">
-                        <h3 class="font-extrabold text-slate-900 text-lg mb-2">Definir Teto Mensal</h3>
-                        <p class="text-xs text-slate-400 mb-5">Estabeleça limites de gastos por categorias críticas.</p>
+                {/* 3. SEPARADOR: LIMITES DE ORÇAMENTO */}
+                {activeTab === 'budgets' && (
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                    <div className="md:col-span-4 bg-white rounded-2xl p-5 border border-slate-200">
+                      <h3 className="font-extrabold text-slate-900 text-base mb-4">Fixar Teto Máximo</h3>
+                      <form onSubmit={handleSetBudget} className="space-y-4">
+                        <div>
+                          <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Categoria de Custo</label>
+                          <select 
+                            value={budgetForm.category}
+                            onChange={e => setBudgetForm(prev => ({ ...prev, category: e.target.value }))}
+                            className="w-full text-xs rounded-xl border border-slate-200 py-2.5 focus:outline-none"
+                          >
+                            {CATEGORIES.despesa.map(c => (
+                              <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                            ))}
+                          </select>
+                        </div>
 
-                        <form onsubmit="setBudgetLimit(event)" class="space-y-4">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-500 mb-1.5">Selecione a Categoria</label>
-                                <select 
-                                    id="budget-category"
-                                    class="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm focus:outline-none font-semibold bg-slate-50"
-                                >
-                                    <!-- Preenchido via JS com categorias de despesa -->
-                                </select>
+                        <div>
+                          <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Teto Mensal (R$)</label>
+                          <input 
+                            type="number" 
+                            value={budgetForm.amount}
+                            onChange={e => setBudgetForm(prev => ({ ...prev, amount: e.target.value }))}
+                            placeholder="Ex: 500"
+                            className="w-full text-xs rounded-xl border border-slate-200 py-2 focus:outline-none"
+                            required
+                          />
+                        </div>
+
+                        <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs">
+                          Sincronizar Orçamento
+                        </button>
+                      </form>
+                    </div>
+
+                    <div className="md:col-span-8 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
+                      <div>
+                        <h2 className="font-extrabold text-slate-900 text-lg">Acompanhamento de Limites</h2>
+                        <p className="text-xs text-slate-400">Garanta o controlo das despesas em relação aos limites de poupança definidos.</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        {CATEGORIES.despesa.map(cat => {
+                          const limit = budgets[cat.id] || 0;
+                          const spent = stats.categoryTotals[cat.id] || 0;
+                          const pct = limit > 0 ? (spent / limit) * 100 : 0;
+
+                          let col = 'bg-emerald-500';
+                          if (pct >= 100) col = 'bg-rose-500';
+                          else if (pct >= 80) col = 'bg-amber-500';
+
+                          return (
+                            <div key={cat.id} className="p-4 border rounded-xl space-y-2">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold flex items-center gap-1">
+                                  <span>{cat.icon}</span>
+                                  <span>{cat.name}</span>
+                                </span>
+                                <span className="font-bold text-slate-700">
+                                  R$ {spent.toFixed(2)} / R$ {limit > 0 ? limit.toFixed(2) : 'Sem teto fixado'}
+                                </span>
+                              </div>
+
+                              {limit > 0 && (
+                                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                  <div className={`h-2 rounded-full ${col}`} style={{ width: `${Math.min(100, pct)}%` }}></div>
+                                </div>
+                              )}
                             </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
+                {/* 4. SEPARADOR: METAS DE POUPANÇA */}
+                {activeTab === 'goals' && (
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                    <div className="md:col-span-4 flex flex-col gap-6">
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200">
+                        <h3 className="font-extrabold text-slate-900 text-base mb-4">Nova Meta de Poupança</h3>
+                        <form onSubmit={handleCreateGoal} className="space-y-3">
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Nome do Objetivo</label>
+                            <input 
+                              type="text" 
+                              placeholder="Ex: Viagem, Carro"
+                              value={newGoal.name}
+                              onChange={e => setNewGoal(prev => ({ ...prev, name: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 py-2.5 focus:outline-none"
+                              required
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <label class="block text-xs font-bold text-slate-500 mb-1.5">Limite Máximo (R$)</label>
-                                <input 
-                                    type="number" 
-                                    id="budget-amount"
-                                    placeholder="Ex: R$ 1.500,00"
-                                    class="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm focus:outline-none"
-                                    required
-                                >
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Alvo (R$)</label>
+                              <input 
+                                type="number" 
+                                placeholder="Alvo"
+                                value={newGoal.target}
+                                onChange={e => setNewGoal(prev => ({ ...prev, target: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 py-2 focus:outline-none"
+                                required
+                              />
                             </div>
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Já tenho (R$)</label>
+                              <input 
+                                type="number" 
+                                placeholder="Inicial"
+                                value={newGoal.current}
+                                onChange={e => setNewGoal(prev => ({ ...prev, current: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 py-2 focus:outline-none"
+                              />
+                            </div>
+                          </div>
 
-                            <button 
-                                type="submit"
-                                class="w-full bg-slate-950 text-white font-bold py-3 px-4 rounded-2xl hover:bg-slate-850 transition text-sm flex items-center justify-center gap-2"
-                              >
-                                <i data-lucide="check" class="w-4 h-4"></i>
-                                <span>Salvar Orçamento</span>
-                            </button>
+                          <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs">
+                            Adicionar Meta
+                          </button>
                         </form>
+                      </div>
+
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200">
+                        <h3 className="font-extrabold text-slate-900 text-base mb-4">Reforço de Poupança</h3>
+                        <form onSubmit={handleGoalDeposit} className="space-y-3">
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta</label>
+                            <select 
+                              value={goalDeposit.goalId} 
+                              onChange={e => setGoalDeposit(prev => ({ ...prev, goalId: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 py-2 focus:outline-none"
+                            >
+                              <option value="">Selecione...</option>
+                              {goals.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Montante (R$)</label>
+                            <input 
+                              type="number" 
+                              placeholder="Valor"
+                              value={goalDeposit.amount}
+                              onChange={e => setGoalDeposit(prev => ({ ...prev, amount: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 py-2 focus:outline-none"
+                            />
+                          </div>
+
+                          <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs">
+                            Efetuar Depósito
+                          </button>
+                        </form>
+                      </div>
                     </div>
 
-                    <!-- Acompanhamento de Orçamentos -->
-                    <div class="md:col-span-8 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 space-y-4">
-                        <div>
-                            <h2 class="text-xl font-extrabold text-slate-900">Limites de Gastos Ativos</h2>
-                            <p class="text-sm text-slate-400">Evite estourar suas economias acompanhando o teto de gastos abaixo:</p>
-                        </div>
+                    <div className="md:col-span-8 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
+                      <h2 className="font-extrabold text-slate-900 text-lg">Metas de Poupança Ativas</h2>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {goals.map(g => {
+                          const pct = Math.min(100, (g.current / g.target) * 100);
 
-                        <div id="budgets-list-container" class="space-y-4">
-                            <!-- Preenchido dinamicamente de acordo com limites ativos -->
-                        </div>
-                    </div>
-
-                </div>
-            </section>
-
-            <!-- ================= ABA: METAS DO COFRE ================= -->
-            <section id="tab-goals" class="hidden space-y-6">
-                <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
-                    
-                    <!-- Lado Esquerdo: Criação e Depósito Rápido -->
-                    <div class="md:col-span-4 flex flex-col gap-6">
-                        
-                        <!-- Criar Nova Meta -->
-                        <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60">
-                            <h3 class="font-extrabold text-slate-900 text-lg mb-4 flex items-center gap-2">
-                                <i data-lucide="target" class="text-emerald-500 w-5 h-5"></i>
-                                Nova Meta do Cofre
-                            </h3>
-
-                            <form onsubmit="createSavingGoal(event)" class="space-y-3.5">
+                          return (
+                            <div key={g.id} className="p-4 border rounded-2xl flex flex-col justify-between space-y-3 bg-slate-50/50">
+                              <div className="flex justify-between items-start">
                                 <div>
-                                    <label class="block text-xs font-bold text-slate-500 mb-1">Nome do Objetivo</label>
-                                    <input 
-                                        type="text" 
-                                        id="goal-name"
-                                        placeholder="Ex: Viagem Japão, Reserva..."
-                                        class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none"
-                                        required
-                                    >
+                                  <h4 className="font-bold text-slate-800 text-sm">{g.name}</h4>
+                                  <p className="text-[10px] text-slate-400">Prazo de Resgate: {new Date(g.deadline).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</p>
                                 </div>
-
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="block text-xs font-bold text-slate-500 mb-1">Valor Alvo (R$)</label>
-                                        <input 
-                                            type="number" 
-                                            id="goal-target"
-                                            placeholder="Alvo"
-                                            class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none"
-                                            required
-                                        >
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-bold text-slate-500 mb-1">Já tenho (R$)</label>
-                                        <input 
-                                            type="number" 
-                                            id="goal-current"
-                                            placeholder="Inicial"
-                                            class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none"
-                                        >
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-500 mb-1">Prazo Final</label>
-                                    <input 
-                                        type="date" 
-                                        id="goal-deadline"
-                                        class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none"
-                                        required
-                                    >
-                                </div>
-
-                                <button 
-                                    type="submit"
-                                    class="w-full bg-slate-950 text-white font-bold py-3 px-4 rounded-2xl hover:bg-slate-850 transition text-sm flex items-center justify-center gap-2"
-                                >
-                                    <i data-lucide="plus" class="w-4 h-4"></i>
-                                    <span>Criar Meta</span>
+                                <button onClick={() => handleDeleteGoal(g.id)} className="text-slate-300 hover:text-rose-600">
+                                  <Icon name="x" className="w-4.5 h-4.5" />
                                 </button>
-                            </form>
-                        </div>
+                              </div>
 
-                        <!-- Fazer Aporte Rápido -->
-                        <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60">
-                            <h3 class="font-extrabold text-slate-900 text-lg mb-4 flex items-center gap-2">
-                                <i data-lucide="piggy-bank" class="text-emerald-500 w-5 h-5"></i>
-                                Adicionar Aporte
-                            </h3>
+                              <div className="grid grid-cols-2 text-xs font-semibold">
+                                <span>Poupado: R$ {g.current.toLocaleString()}</span>
+                                <span className="text-right text-slate-400">Objetivo: R$ {g.target.toLocaleString()}</span>
+                              </div>
 
-                            <form onsubmit="depositToGoal(event)" class="space-y-3.5">
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-500 mb-1">Escolha o Cofre</label>
-                                    <select 
-                                        id="deposit-goal-select"
-                                        class="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm focus:outline-none font-semibold bg-slate-50"
-                                        required
-                                    >
-                                        <!-- Preenchido via JS com metas existentes -->
-                                    </select>
+                              <div className="space-y-1">
+                                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                  <div className="h-1.5 rounded-full bg-indigo-600" style={{ width: `${pct}%` }}></div>
                                 </div>
-
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-500 mb-1">Valor a Guardar (R$)</label>
-                                    <input 
-                                        type="number" 
-                                        id="deposit-amount"
-                                        placeholder="Quanto deseja depositar?"
-                                        class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none"
-                                        required
-                                    >
+                                <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                                  <span>{pct.toFixed(0)}% guardado</span>
+                                  {pct >= 100 && <span className="text-emerald-600">Alcançado! 🎉</span>}
                                 </div>
-
-                                <button 
-                                    type="submit"
-                                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-2xl transition text-sm flex items-center justify-center gap-2"
-                                >
-                                    <i data-lucide="coins" class="w-4 h-4"></i>
-                                    <span>Depositar no Cofre</span>
-                                </button>
-                            </form>
-                        </div>
-
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
+                  </div>
+                )}
 
-                    <!-- Lado Direito: Listagem dos Cofres/Metas -->
-                    <div class="md:col-span-8 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 space-y-4 flex-1">
-                        <div>
-                            <h2 class="text-xl font-extrabold text-slate-900">Seus Objetivos e Cofres</h2>
-                            <p class="text-sm text-slate-400">Acompanhe de perto a evolução dos seus sonhos:</p>
-                        </div>
-
-                        <div id="goals-list-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <!-- Preenchido via JS -->
-                        </div>
-                    </div>
-
-                </div>
-            </section>
-
-            <!-- ================= ABA: SIMULADOR DE JUROS COMPOSTOS ================= -->
-            <section id="tab-simulator" class="hidden bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 space-y-6">
-                <div>
-                    <h2 class="text-xl font-extrabold text-slate-900">Projeção Patrimonial & Juros Compostos</h2>
-                    <p class="text-sm text-slate-400">Faça o seu planejamento de independência financeira calculando o poder do tempo e dos aportes frequentes.</p>
-                </div>
-
-                <!-- Painel de Variáveis do Simulador -->
-                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                {/* 5. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
+                {activeTab === 'simulator' && (
+                  <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-6">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Aporte Inicial (R$)</label>
-                        <input 
-                            type="number" 
-                            id="sim-initial"
-                            value="5000"
-                            oninput="calculateSimulation()"
-                            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold focus:outline-none"
-                        >
+                      <h2 className="font-extrabold text-slate-900 text-lg">Simulador de Juros Compostos</h2>
+                      <p className="text-xs text-slate-400">Projete a evolução do seu portefólio financeiro através de depósitos constantes.</p>
                     </div>
 
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Aporte Mensal (R$)</label>
-                        <input 
-                            type="number" 
-                            id="sim-monthly"
-                            value="500"
-                            oninput="calculateSimulation()"
-                            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold focus:outline-none"
-                        >
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Taxa de Juros (% a.a.)</label>
-                        <input 
-                            type="number" 
-                            step="0.1"
-                            id="sim-rate"
-                            value="11.5"
-                            oninput="calculateSimulation()"
-                            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold focus:outline-none"
-                        >
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Tempo total (Anos)</label>
-                        <select 
-                            id="sim-years"
-                            onchange="calculateSimulation()"
-                            class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-semibold focus:outline-none bg-white"
-                        >
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Aporte Inicial (R$)</label>
+                        <input type="number" value={simInitial} onChange={e => setSimInitial(parseFloat(e.target.value) || 0)} className="w-full py-2 px-3 border rounded-xl text-xs font-semibold" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Aporte Mensal (R$)</label>
+                        <input type="number" value={simMonthly} onChange={e => setSimMonthly(parseFloat(e.target.value) || 0)} className="w-full py-2 px-3 border rounded-xl text-xs font-semibold" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Taxa de Juro (% a.a.)</label>
+                        <input type="number" step="0.1" value={simRate} onChange={e => setSimRate(parseFloat(e.target.value) || 0)} className="w-full py-2 px-3 border rounded-xl text-xs font-semibold" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Prazo (Anos)</label>
+                        <select value={simYears} onChange={e => setSimYears(parseInt(e.target.value) || 1)} className="w-full py-2 px-3 border rounded-xl text-xs font-semibold">
                           <option value="1">1 Ano</option>
                           <option value="3">3 Anos</option>
-                          <option value="5" selected>5 Anos</option>
+                          <option value="5">5 Anos</option>
                           <option value="10">10 Anos</option>
-                          <option value="15">15 Anos</option>
                           <option value="20">20 Anos</option>
-                          <option value="30">30 Anos</option>
                         </select>
-                    </div>
-                </div>
-
-                <!-- Resultados em Destaque -->
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div class="p-5 rounded-3xl bg-indigo-50 border border-indigo-100">
-                        <span class="text-xs text-indigo-600 uppercase font-bold">Total Acumulado Final</span>
-                        <h4 id="sim-res-total" class="text-2xl font-black text-indigo-950 mt-1">R$ 0,00</h4>
+                      </div>
                     </div>
 
-                    <div class="p-5 rounded-3xl bg-emerald-50 border border-emerald-100">
-                        <span class="text-xs text-emerald-600 uppercase font-bold">Seu Capital Investido</span>
-                        <h4 id="sim-res-invested" class="text-2xl font-black text-emerald-950 mt-1">R$ 0,00</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-4 bg-indigo-50 rounded-xl text-indigo-900">
+                        <span className="text-[10px] font-bold uppercase block text-indigo-600">Montante Final Acumulado</span>
+                        <span className="text-xl font-black">R$ {investmentSimulation.finalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
+                      </div>
+                      <div className="p-4 bg-emerald-50 rounded-xl text-emerald-900">
+                        <span className="text-[10px] font-bold uppercase block text-emerald-650">Total Capital Poupado</span>
+                        <span className="text-xl font-black">R$ {investmentSimulation.totalInvested.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
+                      </div>
+                      <div className="p-4 bg-amber-50 rounded-xl text-amber-900">
+                        <span className="text-[10px] font-bold uppercase block text-amber-600">Juros Totais Obtidos</span>
+                        <span className="text-xl font-black">R$ {investmentSimulation.totalGains.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
+                      </div>
                     </div>
+                  </div>
+                )}
 
-                    <div class="p-5 rounded-3xl bg-amber-50 border border-amber-100">
-                        <span class="text-xs text-amber-600 uppercase font-bold">Rendimento dos Juros</span>
-                        <h4 id="sim-res-gains" class="text-2xl font-black text-amber-950 mt-1">R$ 0,00</h4>
-                    </div>
-                </div>
+              </main>
+            </div>
+          </div>
 
-                <!-- Gráfico de Evolução Patrimonial -->
-                <div class="space-y-4">
-                    <h3 class="font-extrabold text-slate-800 text-base">Evolução do Patrimônio Ano a Ano</h3>
-                    
-                    <div id="simulation-chart-wrapper" class="relative h-64 border-b border-l border-slate-200 flex items-end justify-between pt-10 px-4 md:px-8 gap-3">
-                        <!-- Colunas injetadas via JavaScript com as alturas proporcionais -->
-                    </div>
+          <footer className="bg-white border-t py-6 text-center text-[10px] text-slate-400">
+            Desenvolvido para gestão pessoal segura com isolamento de dados no Google Firebase Firestore.
+          </footer>
 
-                    <div class="flex items-center justify-center gap-6 text-xs font-semibold text-slate-500 mt-2">
-                        <div class="flex items-center gap-2">
-                            <div class="w-4 h-4 bg-indigo-600 rounded"></div>
-                            <span>Capital de Bolso</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <div class="w-4 h-4 bg-amber-400 rounded"></div>
-                            <span>Juros Gerados (Efeito Bola de Neve)</span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-        </main>
-    </div>
-
-    <!-- Rodapé -->
-    <footer class="bg-white border-t border-slate-200 mt-12 py-8 text-center text-xs text-slate-400">
-        <div class="max-w-7xl mx-auto px-4 space-y-2">
-            <p class="font-bold text-slate-500">FinançasPro © 2026</p>
-            <p>Seus dados são armazenados de forma híbrida: localmente em cache e sincronizados com segurança na nuvem do seu projeto Firebase.</p>
         </div>
-    </footer>
-
-    <!-- Lógica de Estado e Controle do Sistema (Firebase Integration) -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Configurações fornecidas do seu Firebase App
-        // Fallback dinâmico caso executado em ambiente pré-configurado
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
-            ? JSON.parse(__firebase_config) 
-            : {
-                apiKey: "AIzaSyCT_lmCQQEvSTfng4pITg7DJ5O-X0gWyXc",
-                authDomain: "gestfinanceira-a8a7b.firebaseapp.com",
-                projectId: "gestfinanceira-a8a7b",
-                storageBucket: "gestfinanceira-a8a7b.firebasestorage.app",
-                messagingSenderId: "622341942143",
-                appId: "1:622341942143:web:f0fc5c176903d3d71a884a",
-                measurementId: "G-84SYMRQ7F6"
-            };
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'gestfinanceira-a8a7b';
-
-        // Inicializando o Firebase
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        
-        // Estado do usuário
-        let currentUser = null;
-
-        // Configurações de Categorias Iniciais
-        const CATEGORIES = {
-            receita: [
-                { id: 'salario', name: 'Salário', color: 'bg-emerald-500', hex: '#10b981', icon: '💼' },
-                { id: 'investimentos', name: 'Rendimentos', color: 'bg-teal-500', hex: '#14b8a6', icon: '📈' },
-                { id: 'freelance', name: 'Freelance', color: 'bg-indigo-500', hex: '#6366f1', icon: '💻' },
-                { id: 'outros_rec', name: 'Outros (Receita)', color: 'bg-cyan-500', hex: '#06b6d4', icon: '💵' }
-            ],
-            despesa: [
-                { id: 'moradia', name: 'Moradia / Aluguel', color: 'bg-rose-500', hex: '#f43f5e', icon: '🏠' },
-                { id: 'alimentacao', name: 'Alimentação', color: 'bg-amber-500', hex: '#f59e0b', icon: '🍔' },
-                { id: 'transporte', name: 'Transporte', color: 'bg-blue-500', hex: '#3b82f6', icon: '🚗' },
-                { id: 'lazer', name: 'Lazer e Viagens', color: 'bg-purple-500', hex: '#a855f7', icon: '✈️' },
-                { id: 'saude', name: 'Saúde', color: 'bg-red-500', hex: '#ef4444', icon: '🏥' },
-                { id: 'educacao', name: 'Educação', color: 'bg-violet-500', hex: '#8b5cf6', icon: '📚' },
-                { id: 'outros_desp', name: 'Outros (Despesa)', color: 'bg-slate-500', hex: '#64748b', icon: '🛒' }
-            ]
-        };
-
-        // Estado inicial da Aplicação (Fallback se offline ou primeiro acesso)
-        let appState = {
-            transactions: [
-                { id: '1', desc: 'Salário Principal', amount: 5500, type: 'receita', category: 'salario', date: '2026-05-01' },
-                { id: '2', desc: 'Aluguel & Condomínio', amount: 1600, type: 'despesa', category: 'moradia', date: '2026-05-02' },
-                { id: '3', desc: 'Supermercado Mensal', amount: 850, type: 'despesa', category: 'alimentacao', date: '2026-05-03' },
-                { id: '4', desc: 'Projeto Freelance React', amount: 1200, type: 'receita', category: 'freelance', date: '2026-05-10' },
-                { id: '5', desc: 'Combustível', amount: 220, type: 'despesa', category: 'transporte', date: '2026-05-12' },
-                { id: '6', desc: 'Jantar de Fim de Semana', amount: 180, type: 'despesa', category: 'lazer', date: '2026-05-14' },
-                { id: '7', desc: 'Rendimento CDB', amount: 45, type: 'receita', category: 'investimentos', date: '2026-05-15' },
-                { id: '8', desc: 'Curso de Especialização', amount: 350, type: 'despesa', category: 'educacao', date: '2026-05-16' }
-            ],
-            budgets: {
-                moradia: 1800,
-                alimentacao: 1000,
-                transporte: 400,
-                lazer: 500,
-                saude: 300,
-                educacao: 500,
-                outros_desp: 300
-            },
-            goals: [
-                { id: 'g1', name: 'Reserva de Emergência', target: 15000, current: 8500, deadline: '2026-12-31' },
-                { id: 'g2', name: 'Viagem de Fim de Ano', target: 6000, current: 2400, deadline: '2026-11-30' },
-                { id: 'g3', name: 'Troca de Computador', target: 5000, current: 1500, deadline: '2027-04-30' }
-            ]
-        };
-
-        // REGRA 3: Executar autenticação segura ANTES de fazer qualquer consulta no Firestore
-        async function authenticateUser() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    const userCredential = await signInWithCustomToken(auth, __initial_auth_token);
-                    currentUser = userCredential.user;
-                } else {
-                    const userCredential = await signInAnonymously(auth);
-                    currentUser = userCredential.user;
-                }
-                
-                // Inicializa a carga após login bem-sucedido
-                await loadFromFirestore();
-            } catch (error) {
-                console.error("Erro na autenticação do Firebase:", error);
-                const statusEl = document.getElementById('cloud-status');
-                if (statusEl) {
-                    statusEl.className = "text-xs text-rose-400 mr-2 flex items-center gap-1";
-                    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> Modo Offline (Auth)`;
-                }
-                // Carrega em localStorage em caso de falha de conexão inicial
-                loadStorage();
-                updateUI();
-            }
-        }
-
-        // Carregar do localStorage local para renderização imediata enquanto conecta
-        function loadStorage() {
-            const saved = localStorage.getItem('financas_pro_state');
-            if (saved) {
-                try {
-                    appState = JSON.parse(saved);
-                } catch(e) {
-                    console.error("Erro ao ler localStorage");
-                }
-            }
-        }
-
-        // Salvar alterações localmente e sincronizar em background com Firestore
-        function saveToStorage() {
-            localStorage.setItem('financas_pro_state', JSON.stringify(appState));
-            saveToFirestore();
-        }
-
-        // Sincronização de saída (Envia dados para o Cloud Firestore usando regras estritas)
-        async function saveToFirestore() {
-            if (!currentUser) return; // REGRA 3: Proteger consultas exigindo auth prévio
-
-            const userId = currentUser.uid;
-            const statusEl = document.getElementById('cloud-status');
-            if (statusEl) {
-                statusEl.className = "text-xs text-amber-400 mr-2 flex items-center gap-1";
-                statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Sincronizando...`;
-            }
-            try {
-                // REGRA 1: Caminho estrito para dados privados: /artifacts/{appId}/users/{userId}/{collectionName}/{documentId}
-                const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'userData', 'state');
-                
-                await setDoc(userDocRef, {
-                    state: appState,
-                    updatedAt: new Date().toISOString()
-                });
-                if (statusEl) {
-                    statusEl.className = "text-xs text-emerald-400 mr-2 flex items-center gap-1";
-                    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Nuvem Ativa`;
-                }
-            } catch (error) {
-                console.error("Erro ao gravar no Firestore: ", error);
-                if (statusEl) {
-                    statusEl.className = "text-xs text-rose-400 mr-2 flex items-center gap-1";
-                    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> Erro Cloud`;
-                }
-                showNotification("Erro na permissão de gravação da nuvem.", "error");
-            }
-        }
-
-        // Sincronização de entrada (Carrega dados mais recentes do caminho seguro da nuvem se existirem)
-        async function loadFromFirestore() {
-            if (!currentUser) return; // REGRA 3: Exigir login prévio
-
-            const userId = currentUser.uid;
-            const statusEl = document.getElementById('cloud-status');
-            try {
-                // REGRA 1: Caminho estrito de leitura correspondente
-                const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'userData', 'state');
-                const docSnap = await getDoc(userDocRef);
-                
-                if (docSnap.exists()) {
-                    const cloudData = docSnap.data();
-                    if (cloudData.state) {
-                        appState = cloudData.state;
-                        updateUI();
-                        showNotification("Dados de nuvem sincronizados com sucesso!", "success");
-                    }
-                } else {
-                    // Sem registros anteriores na nuvem, faz upload do estado inicial ou carrega local
-                    loadStorage();
-                    updateUI();
-                    await saveToFirestore();
-                }
-                if (statusEl) {
-                    statusEl.className = "text-xs text-emerald-400 mr-2 flex items-center gap-1";
-                    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Nuvem Ativa`;
-                }
-            } catch (error) {
-                console.error("Erro ao carregar do Firestore: ", error);
-                if (statusEl) {
-                    statusEl.className = "text-xs text-rose-400 mr-2 flex items-center gap-1";
-                    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> Modo Offline`;
-                }
-                loadStorage();
-                updateUI();
-            }
-        }
-
-        // Sistema de mensagens flutuantes (Toasts)
-        function showNotification(message, type = 'success') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            
-            let bgClass = 'bg-emerald-600';
-            let icon = 'check-circle';
-            if (type === 'warning') {
-                bgClass = 'bg-amber-500';
-                icon = 'alert-triangle';
-            } else if (type === 'error') {
-                bgClass = 'bg-rose-600';
-                icon = 'x-circle';
-            }
-
-            toast.className = `flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white font-medium text-sm transition-all duration-300 transform translate-y-2 opacity-0 ${bgClass}`;
-            toast.innerHTML = `
-                <i data-lucide="${icon}" class="w-4.5 h-4.5 shrink-0"></i>
-                <span>${message}</span>
-            `;
-
-            container.appendChild(toast);
-            lucide.createIcons();
-
-            // Animar entrada
-            setTimeout(() => {
-                toast.classList.remove('translate-y-2', 'opacity-0');
-            }, 50);
-
-            // Remover após 3.5 segundos
-            setTimeout(() => {
-                toast.classList.add('opacity-0', 'translate-y-2');
-                setTimeout(() => toast.remove(), 300);
-            }, 3500);
-        }
-
-        // Cálculos e estatísticas principais
-        function getFinancialStats() {
-            let income = 0;
-            let expense = 0;
-            const categoryTotals = {};
-
-            appState.transactions.forEach(t => {
-                const amt = parseFloat(t.amount) || 0;
-                if (t.type === 'receita') {
-                    income += amt;
-                } else {
-                    expense += amt;
-                    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + amt;
-                }
-            });
-
-            const balance = income - expense;
-            const savingsRate = income > 0 ? Math.max(0, Math.min(100, ((income - expense) / income) * 100)) : 0;
-
-            return { income, expense, balance, savingsRate, categoryTotals };
-        }
-
-        // Alterar de aba na interface
-        function switchTab(tabName) {
-            // Esconder todas as seções
-            document.getElementById('tab-dashboard').classList.add('hidden');
-            document.getElementById('tab-transactions').classList.add('hidden');
-            document.getElementById('tab-budgets').classList.add('hidden');
-            document.getElementById('tab-goals').classList.add('hidden');
-            document.getElementById('tab-simulator').classList.add('hidden');
-
-            // Mostrar a seção selecionada
-            document.getElementById(`tab-${tabName}`).classList.remove('hidden');
-
-            // Atualizar cor dos botões de navegação
-            const buttons = document.querySelectorAll('.tab-btn');
-            buttons.forEach(btn => {
-                btn.className = "tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-950 transition";
-            });
-
-            const activeBtn = document.getElementById(`btn-${tabName}`);
-            if (activeBtn) {
-                activeBtn.className = "tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left text-sm font-bold transition bg-emerald-50 text-emerald-850";
-            }
-
-            // Ações específicas ao carregar abas específicas
-            if (tabName === 'simulator') {
-                calculateSimulation();
-            }
-
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        // Atualizar lista de seleção de categoria baseada na escolha de fluxo
-        function updateCategorySelect() {
-            const flowType = document.getElementById('tx-type').value;
-            const select = document.getElementById('tx-category');
-            select.innerHTML = '';
-
-            CATEGORIES[flowType].forEach(cat => {
-                const opt = document.createElement('option');
-                opt.value = cat.id;
-                opt.innerText = `${cat.icon} ${cat.name}`;
-                select.appendChild(opt);
-            });
-        }
-
-        // Renderizar todos os elementos dinâmicos do Dashboard
-        function updateUI() {
-            const stats = getFinancialStats();
-
-            // Atualizar valores do topo do dashboard
-            document.getElementById('card-balance').innerText = `R$ ${stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('card-income').innerText = `R$ ${stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('card-expense').innerText = `R$ ${stats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-
-            // Cor do Saldo Positivo / Negativo
-            if (stats.balance >= 0) {
-                document.getElementById('card-balance').className = "text-2xl font-black text-slate-900";
-                document.getElementById('aside-balance').className = "text-3xl font-black text-emerald-400 mt-1";
-            } else {
-                document.getElementById('card-balance').className = "text-2xl font-black text-rose-600";
-                document.getElementById('aside-balance').className = "text-3xl font-black text-rose-400 mt-1";
-            }
-
-            // Atualizar painel lateral de resumo
-            document.getElementById('aside-balance').innerText = `R$ ${stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('aside-income').innerText = `R$ ${stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('aside-expense').innerText = `R$ ${stats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            document.getElementById('aside-savings-pct').innerText = `${stats.savingsRate.toFixed(1)}%`;
-            document.getElementById('aside-savings-bar').style.width = `${stats.savingsRate}%`;
-
-            // Renderizar as Transações Recentes
-            renderRecentTransactions();
-
-            // Renderizar gráfico de distribuição de categorias
-            renderCategoryChart(stats);
-
-            // Renderizar os insights
-            renderInsights(stats);
-
-            // Re-renderizar as telas secundárias se ativas
-            renderTransactionsList();
-            renderBudgetsTab();
-            renderGoalsTab();
-
-            // Certificar que os ícones do Lucide estão atualizados
-            lucide.createIcons();
-        }
-
-        // Renderizar lista das últimas transações no Dashboard
-        function renderRecentTransactions() {
-            const tbody = document.getElementById('recent-transactions-tbody');
-            tbody.innerHTML = '';
-
-            // Mostrar últimas 5 transações
-            const list = appState.transactions.slice(0, 5);
-
-            if (list.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="4" class="py-10 text-center text-slate-400">
-                            Nenhum lançamento recente.
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            list.forEach(t => {
-                const isIncome = t.type === 'receita';
-                const catList = isIncome ? CATEGORIES.receita : CATEGORIES.despesa;
-                const cat = catList.find(c => c.id === t.category) || { name: 'Geral', icon: '💸' };
-
-                const tr = document.createElement('tr');
-                tr.className = "hover:bg-slate-50/50 transition";
-                tr.innerHTML = `
-                    <td class="py-3">
-                        <div class="font-bold text-slate-800">${t.desc}</div>
-                        <div class="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                            <span>${cat.icon}</span>
-                            <span>${cat.name}</span>
-                        </div>
-                    </td>
-                    <td class="py-3 text-slate-400 text-xs">
-                        ${new Date(t.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                    </td>
-                    <td class="py-3 font-bold text-right ${isIncome ? 'text-emerald-600' : 'text-slate-800'}">
-                        ${isIncome ? '+' : '-'} R$ ${t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td class="py-3 text-right">
-                        <button onclick="deleteTransaction('${t.id}')" class="text-slate-300 hover:text-rose-600 p-1.5 rounded-lg transition">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
-        // Renderizar gráfico de categorias na Dashboard
-        function renderCategoryChart(stats) {
-            const container = document.getElementById('chart-categories-list');
-            const pillContainer = document.getElementById('chart-pill-container');
-            
-            container.innerHTML = '';
-            pillContainer.innerHTML = '';
-
-            if (stats.expense === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-8 text-slate-400 text-sm">
-                        Nenhuma despesa para exibir o gráfico de proporção.
-                    </div>
-                `;
-                return;
-            }
-
-            CATEGORIES.despesa.forEach(cat => {
-                const spent = stats.categoryTotals[cat.id] || 0;
-                if (spent === 0) return;
-
-                const pct = (spent / stats.expense) * 100;
-
-                // Adicionar linha de categoria
-                const div = document.createElement('div');
-                div.className = "space-y-1";
-                div.innerHTML = `
-                    <div class="flex justify-between items-center text-xs">
-                        <span class="font-bold text-slate-700 flex items-center gap-1.5">
-                            <span>${cat.icon}</span>
-                            <span>${cat.name}</span>
-                        </span>
-                        <span class="font-black text-slate-800">
-                            R$ ${spent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${pct.toFixed(1)}%)
-                        </span>
-                    </div>
-                    <div class="w-full bg-slate-100 rounded-full h-2">
-                        <div class="h-2 rounded-full ${cat.color}" style="width: ${pct}%"></div>
-                    </div>
-                `;
-                container.appendChild(div);
-
-                // Adicionar segmento na pílula agregada
-                const segment = document.createElement('div');
-                segment.className = `${cat.color} h-full transition-all`;
-                segment.style.width = `${pct}%`;
-                segment.title = `${cat.name}: R$ ${spent.toLocaleString()}`;
-                pillContainer.appendChild(segment);
-            });
-        }
-
-        // Renderizar Painel de Dicas e Insights de Finanças
-        function renderInsights(stats) {
-            const container = document.getElementById('insights-container');
-            container.innerHTML = '';
-
-            const insights = [];
-
-            // 1. Dica de Poupança
-            if (stats.savingsRate > 25) {
-                insights.push({
-                    type: 'success',
-                    icon: 'smile',
-                    title: 'Excelente Margem!',
-                    text: `Você poupou ${stats.savingsRate.toFixed(1)}% das receitas. Uma excelente taxa para colocar na sua carteira de investimentos!`
-                });
-            } else if (stats.savingsRate > 0) {
-                insights.push({
-                    type: 'info',
-                    icon: 'lightbulb',
-                    title: 'Taxa Saudável',
-                    text: `Você economizou ${stats.savingsRate.toFixed(1)}% de suas receitas. Tente mirar a meta ideal de 20% no próximo mês.`
-                });
-            } else {
-                insights.push({
-                    type: 'danger',
-                    icon: 'alert-triangle',
-                    title: 'Atenção ao Orçamento',
-                    text: 'Suas despesas superaram suas receitas neste mês. Considere cortar gastos não essenciais nas categorias de Lazer.'
-                });
-            }
-
-            // 2. Alertas de Estouro de Limites
-            CATEGORIES.despesa.forEach(cat => {
-                const limit = appState.budgets[cat.id] || 0;
-                const spent = stats.categoryTotals[cat.id] || 0;
-
-                if (limit > 0) {
-                    if (spent > limit) {
-                        insights.push({
-                            type: 'danger',
-                            icon: 'octagon',
-                            title: `Teto estourado: ${cat.name}`,
-                            text: `Você ultrapassou o limite de R$ ${limit} em ${cat.icon} ${cat.name} por R$ ${(spent - limit).toFixed(2)}.`
-                        });
-                    } else if (spent > limit * 0.8) {
-                        insights.push({
-                            type: 'warning',
-                            icon: 'alert-circle',
-                            title: `Próximo do teto: ${cat.name}`,
-                            text: `Você consumiu mais de 80% do limite de R$ ${limit} reservado para esta categoria.`
-                        });
-                    }
-                }
-            });
-
-            // Adicionar no container
-            insights.slice(0, 3).forEach(ins => {
-                let cardClass = 'bg-blue-50 border-blue-100 text-blue-900';
-                let iconColor = 'text-blue-500';
-
-                if (ins.type === 'success') {
-                    cardClass = 'bg-emerald-50 border-emerald-100 text-emerald-900';
-                    iconColor = 'text-emerald-500';
-                } else if (ins.type === 'warning') {
-                    cardClass = 'bg-amber-50 border-amber-100 text-amber-900';
-                    iconColor = 'text-amber-500';
-                } else if (ins.type === 'danger') {
-                    cardClass = 'bg-rose-50 border-rose-100 text-rose-900';
-                    iconColor = 'text-rose-500';
-                }
-
-                const div = document.createElement('div');
-                div.className = `p-3.5 border rounded-2xl flex gap-3 text-xs leading-relaxed ${cardClass}`;
-                div.innerHTML = `
-                    <div class="${iconColor} shrink-0 mt-0.5">
-                        <i data-lucide="${ins.icon}" class="w-4 h-4"></i>
-                    </div>
-                    <div>
-                        <strong class="font-bold block text-sm mb-0.5">${ins.title}</strong>
-                        <span>${ins.text}</span>
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-
-            if (insights.length === 0) {
-                container.innerHTML = `
-                    <p class="text-sm text-slate-400 py-6 text-center">Tudo em ordem no momento. Registre novos lançamentos frequentes.</p>
-                `;
-            }
-        }
-
-        // Adicionar Nova Transação
-        function addTransaction(e) {
-            e.preventDefault();
-            const desc = document.getElementById('tx-desc').value.trim();
-            const amount = parseFloat(document.getElementById('tx-amount').value);
-            const date = document.getElementById('tx-date').value;
-            const type = document.getElementById('tx-type').value;
-            const category = document.getElementById('tx-category').value;
-
-            if (!desc || isNaN(amount) || amount <= 0 || !date) {
-                showNotification('Dados inseridos inválidos. Tente novamente.', 'error');
-                return;
-            }
-
-            const newTx = {
-                id: Date.now().toString(),
-                desc,
-                amount,
-                type,
-                category,
-                date
-            };
-
-            appState.transactions.unshift(newTx);
-            saveToStorage();
-            updateUI();
-
-            // Limpar Campos
-            document.getElementById('tx-desc').value = '';
-            document.getElementById('tx-amount').value = '';
-            
-            showNotification('Transação cadastrada com sucesso!');
-        }
-
-        // Remover Transação
-        function deleteTransaction(id) {
-            appState.transactions = appState.transactions.filter(t => t.id !== id);
-            saveToStorage();
-            updateUI();
-            showNotification('Lançamento deletado com sucesso.', 'warning');
-        }
-
-        // Renderizar a lista de todas as Transações do Extrato
-        function renderTransactionsList() {
-            const tbody = document.getElementById('full-transactions-tbody');
-            if (!tbody) return;
-
-            tbody.innerHTML = '';
-
-            const searchVal = document.getElementById('filter-search').value.toLowerCase();
-            const typeVal = document.getElementById('filter-type').value;
-            const catVal = document.getElementById('filter-category').value;
-
-            // REGRA 2: Filtros e ordenação ocorrem exclusivamente em memória JavaScript local
-            const filtered = appState.transactions.filter(t => {
-                const matchesSearch = t.desc.toLowerCase().includes(searchVal);
-                const matchesType = typeVal === 'all' || t.type === typeVal;
-                const matchesCat = catVal === 'all' || t.category === catVal;
-                return matchesSearch && matchesType && matchesCat;
-            });
-
-            if (filtered.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="5" class="py-12 text-center text-slate-400 text-sm">
-                            Nenhum registro corresponde aos filtros selecionados.
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            filtered.forEach(t => {
-                const isIncome = t.type === 'receita';
-                const catList = isIncome ? CATEGORIES.receita : CATEGORIES.despesa;
-                const cat = catList.find(c => c.id === t.category) || { name: 'Geral', icon: '💸' };
-
-                const tr = document.createElement('tr');
-                tr.className = "hover:bg-slate-50/50 transition";
-                tr.innerHTML = `
-                    <td class="py-3.5 font-bold text-slate-800">${t.desc}</td>
-                    <td class="py-3.5">
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-50 border text-slate-600">
-                            <span>${cat.icon}</span>
-                            <span>${cat.name}</span>
-                        </span>
-                    </td>
-                    <td class="py-3.5 text-slate-500 text-xs">
-                        ${new Date(t.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                    </td>
-                    <td class="py-3.5 font-bold text-right ${isIncome ? 'text-emerald-600' : 'text-slate-800'}">
-                        ${isIncome ? '+' : '-'} R$ ${t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td class="py-3.5 text-center">
-                        <button onclick="deleteTransaction('${t.id}')" class="text-slate-300 hover:text-rose-600 p-1 rounded-md transition inline-block">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            lucide.createIcons();
-        }
-
-        // Renderizar a aba de limites e orçamentos
-        function renderBudgetsTab() {
-            const container = document.getElementById('budgets-list-container');
-            if (!container) return;
-
-            container.innerHTML = '';
-            const stats = getFinancialStats();
-
-            CATEGORIES.despesa.forEach(cat => {
-                const limit = appState.budgets[cat.id] || 0;
-                const spent = stats.categoryTotals[cat.id] || 0;
-                const pct = limit > 0 ? (spent / limit) * 100 : 0;
-
-                let progressColor = 'bg-emerald-500';
-                let bgSoftColor = 'bg-emerald-50';
-                let textStatus = 'text-emerald-700';
-
-                if (pct >= 100) {
-                    progressColor = 'bg-rose-500';
-                    bgSoftColor = 'bg-rose-50';
-                    textStatus = 'text-rose-700';
-                } else if (pct >= 80) {
-                    progressColor = 'bg-amber-500';
-                    bgSoftColor = 'bg-amber-50';
-                    textStatus = 'text-amber-700';
-                }
-
-                const div = document.createElement('div');
-                div.className = "p-4 border border-slate-150 rounded-2xl space-y-2.5 hover:border-slate-250 transition bg-slate-55/20";
-                div.innerHTML = `
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <span class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                                <span>${cat.icon}</span>
-                                <span>${cat.name}</span>
-                            </span>
-                            <span class="text-[11px] text-slate-400">
-                                Limite estipulado: ${limit > 0 ? `R$ ${limit.toLocaleString('pt-BR')}` : 'Não definido'}
-                            </span>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-sm font-extrabold text-slate-900">
-                                R$ ${spent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </div>
-                            ${limit > 0 ? `
-                                <span class="inline-block px-2.5 py-0.5 rounded-lg text-[10px] font-bold mt-1 ${bgSoftColor} ${textStatus}">
-                                    ${pct.toFixed(0)}% Utilizado
-                                </span>
-                            ` : ''}
-                        </div>
-                    </div>
-                    ${limit > 0 ? `
-                        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                            <div class="h-2.5 rounded-full transition-all duration-500 ${progressColor}" style="width: ${Math.min(100, pct)}%"></div>
-                        </div>
-                    ` : ''}
-                `;
-                container.appendChild(div);
-            });
-        }
-
-        // Atualizar ou fixar um teto de orçamento
-        function setBudgetLimit(e) {
-            e.preventDefault();
-            const category = document.getElementById('budget-category').value;
-            const amount = parseFloat(document.getElementById('budget-amount').value);
-
-            if (isNaN(amount) || amount <= 0) {
-                showNotification('Defina um valor de limite válido.', 'error');
-                return;
-            }
-
-            appState.budgets[category] = amount;
-            saveToStorage();
-            updateUI();
-
-            document.getElementById('budget-amount').value = '';
-            showNotification('Limite de orçamento fixado com sucesso!');
-        }
-
-        // Renderizar a aba de metas (Cofre)
-        function renderGoalsTab() {
-            const container = document.getElementById('goals-list-container');
-            const select = document.getElementById('deposit-goal-select');
-            if (!container || !select) return;
-
-            container.innerHTML = '';
-            select.innerHTML = '<option value="">Selecione a meta...</option>';
-
-            appState.goals.forEach(goal => {
-                const pct = Math.min(100, (goal.current / goal.target) * 100);
-                const isComplete = pct >= 100;
-
-                // Preencher listagem visual
-                const div = document.createElement('div');
-                div.className = "p-5 border border-slate-200 rounded-2xl flex flex-col justify-between space-y-4 hover:border-emerald-500 transition-all duration-300";
-                div.innerHTML = `
-                    <div>
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h4 class="font-extrabold text-slate-800 text-base">${goal.name}</h4>
-                                <p class="text-xs text-slate-400">Prazo: {new Date(goal.deadline).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
-                            </div>
-                            <button onclick="deleteGoal('${goal.id}')" class="text-slate-300 hover:text-rose-600 transition">
-                                <i data-lucide="x" class="w-4.5 h-4.5"></i>
-                            </button>
-                        </div>
-
-                        <div class="mt-4 grid grid-cols-2 gap-1.5 text-xs">
-                            <div>
-                                <span class="text-slate-400 block">Acumulado</span>
-                                <span class="font-bold text-slate-900">R$ ${goal.current.toLocaleString('pt-BR')}</span>
-                            </div>
-                            <div class="text-right">
-                                <span class="text-slate-400 block">Objetivo final</span>
-                                <span class="font-bold text-slate-900">R$ ${goal.target.toLocaleString('pt-BR')}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="space-y-1.5">
-                        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                            <div class="h-2.5 rounded-full transition-all duration-500 ${isComplete ? 'bg-emerald-500' : 'bg-indigo-600'}" style="width: ${pct}%"></div>
-                        </div>
-                        <div class="flex justify-between items-center text-xs">
-                            <span class="font-bold text-slate-650">${pct.toFixed(1)}% concluído</span>
-                            ${isComplete ? '<span class="text-emerald-600 font-bold">✨ Completa!</span>' : ''}
-                        </div>
-                    </div>
-                `;
-                container.appendChild(div);
-
-                // Preencher select de depósito
-                const opt = document.createElement('option');
-                opt.value = goal.id;
-                opt.innerText = goal.name;
-                select.appendChild(opt);
-            });
-
-            if (appState.goals.length === 0) {
-                container.innerHTML = `
-                    <div class="col-span-2 py-10 text-center text-slate-400 text-sm">
-                        Nenhuma meta cadastrada no momento. Defina seus objetivos ao lado!
-                    </div>
-                `;
-            }
-
-            lucide.createIcons();
-        }
-
-        // Criar Meta de Poupança
-        function createSavingGoal(e) {
-            e.preventDefault();
-            const name = document.getElementById('goal-name').value.trim();
-            const target = parseFloat(document.getElementById('goal-target').value);
-            const current = parseFloat(document.getElementById('goal-current').value) || 0;
-            const deadline = document.getElementById('goal-deadline').value;
-
-            if (!name || isNaN(target) || target <= 0 || !deadline) {
-                showNotification('Insira dados válidos para a meta.', 'error');
-                return;
-            }
-
-            const newGoal = {
-                id: Date.now().toString(),
-                name,
-                target,
-                current,
-                deadline
-            };
-
-            appState.goals.push(newGoal);
-            saveToStorage();
-            updateUI();
-
-            // Limpar formulário
-            document.getElementById('goal-name').value = '';
-            document.getElementById('goal-target').value = '';
-            document.getElementById('goal-current').value = '';
-            document.getElementById('goal-deadline').value = '';
-
-            showNotification('Objetivo do cofre criado com sucesso!');
-        }
-
-        // Deletar Meta
-        function deleteGoal(id) {
-            appState.goals = appState.goals.filter(g => g.id !== id);
-            saveToStorage();
-            updateUI();
-            showNotification('Meta deletada do cofre.', 'warning');
-        }
-
-        // Depositar em uma Meta Existente
-        function depositToGoal(e) {
-            e.preventDefault();
-            const goalId = document.getElementById('deposit-goal-select').value;
-            const amount = parseFloat(document.getElementById('deposit-amount').value);
-
-            if (!goalId || isNaN(amount) || amount <= 0) {
-                showNotification('Selecione uma meta e um valor válido.', 'error');
-                return;
-            }
-
-            const goal = appState.goals.find(g => g.id === goalId);
-            if (!goal) return;
-
-            goal.current = Math.min(goal.target, goal.current + amount);
-
-            // Registrar no extrato também
-            const autoTx = {
-                id: Date.now().toString(),
-                desc: `Poupança: ${goal.name}`,
-                amount,
-                type: 'despesa',
-                category: 'outros_desp',
-                date: new Date().toISOString().split('T')[0]
-            };
-            appState.transactions.unshift(autoTx);
-
-            saveToStorage();
-            updateUI();
-
-            document.getElementById('deposit-amount').value = '';
-            showNotification(`Depósito de R$ ${amount.toLocaleString('pt-BR')} adicionado a ${goal.name}!`);
-        }
-
-        // Calcular Projeção de Juros Compostos
-        function calculateSimulation() {
-            const initial = parseFloat(document.getElementById('sim-initial').value) || 0;
-            const monthly = parseFloat(document.getElementById('sim-monthly').value) || 0;
-            const annualRate = parseFloat(document.getElementById('sim-rate').value) || 0;
-            const years = parseInt(document.getElementById('sim-years').value) || 5;
-
-            const monthlyRate = Math.pow(1 + (annualRate / 100), 1 / 12) - 1;
-            const totalMonths = years * 12;
-
-            let balance = initial;
-            let totalInvested = initial;
-
-            const timeline = [];
-
-            for (let m = 1; m <= totalMonths; m++) {
-                const yieldGains = balance * monthlyRate;
-                balance += yieldGains + monthly;
-                totalInvested += monthly;
-
-                // Logar a cada 12 meses (anual) ou no último mês
-                if (m % 12 === 0 || m === totalMonths) {
-                    timeline.push({
-                        year: Math.ceil(m / 12),
-                        total: balance,
-                        invested: totalInvested,
-                        gains: balance - totalInvested
-                    });
-                }
-            }
-
-            // Exibir resultados em destaque
-            const finalValue = balance;
-            const totalGains = finalValue - totalInvested;
-
-            document.getElementById('sim-res-total').innerText = `R$ ${finalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-            document.getElementById('sim-res-invested').innerText = `R$ ${totalInvested.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-            document.getElementById('sim-res-gains').innerText = `R$ ${totalGains.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-            // Renderizar gráfico de colunas
-            const chartWrapper = document.getElementById('simulation-chart-wrapper');
-            chartWrapper.innerHTML = '';
-
-            timeline.forEach(point => {
-                const pctTotal = finalValue > 0 ? (point.total / finalValue) * 100 : 0;
-                const pctInvested = finalValue > 0 ? (point.invested / finalValue) * 100 : 0;
-
-                // Altura proporcional em pixels para o wrapper de 256px (h-64)
-                const totalHeightPx = (pctTotal * 1.8).toFixed(0);
-                const investedHeightPct = ((point.invested / point.total) * 100).toFixed(0);
-
-                const col = document.createElement('div');
-                col.className = "flex-1 flex flex-col items-center group relative z-10";
-                col.innerHTML = `
-                    <!-- Tooltip ao passar o mouse -->
-                    <div class="absolute bottom-full mb-2 bg-slate-950 text-white rounded-xl p-3 shadow-2xl text-[11px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-30 leading-normal">
-                        <p class="font-extrabold text-white mb-0.5">Ano ${point.year}</p>
-                        <p class="text-indigo-350">Investido: R$ ${point.invested.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
-                        <p class="text-amber-455 font-bold">Total: R$ ${point.total.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
-                    </div>
-
-                    <!-- Coluna com cores sobrepostas -->
-                    <div class="w-full max-w-[45px] bg-slate-100 rounded-t-lg overflow-hidden flex flex-col justify-end relative shadow-sm" style="height: ${totalHeightPx}px">
-                        <div class="bg-amber-400 w-full h-full"></div>
-                        <div class="bg-indigo-600 w-full absolute bottom-0" style="height: ${investedHeightPct}%"></div>
-                    </div>
-
-                    <span class="text-[10px] font-bold text-slate-500 mt-2">Ano ${point.year}</span>
-                `;
-                chartWrapper.appendChild(col);
-            });
-        }
-
-        // Exportar dados para um arquivo JSON local
-        function exportData() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", "financas_pro_backup.json");
-            document.body.appendChild(downloadAnchor);
-            downloadAnchor.click();
-            downloadAnchor.remove();
-            showNotification('Backup exportado com sucesso!');
-        }
-
-        // Importar dados de um arquivo JSON local
-        function importData(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const imported = JSON.parse(e.target.result);
-                    if (imported.transactions && imported.budgets && imported.goals) {
-                        appState = imported;
-                        saveToStorage();
-                        updateUI();
-                        showNotification('Backup restaurado com sucesso!');
-                    } else {
-                        showNotification('Arquivo inválido ou incompleto.', 'error');
-                    }
-                } catch(err) {
-                    showNotification('Erro ao processar arquivo JSON.', 'error');
-                }
-            };
-            reader.readAsText(file);
-        }
-
-        // Exportar escopos para o escopo global (Exclusivo para uso de Inline Events em ES Modules)
-        window.switchTab = switchTab;
-        window.addTransaction = addTransaction;
-        window.deleteTransaction = deleteTransaction;
-        window.updateCategorySelect = updateCategorySelect;
-        window.renderTransactionsList = renderTransactionsList;
-        window.setBudgetLimit = setBudgetLimit;
-        window.createSavingGoal = createSavingGoal;
-        window.deleteGoal = deleteGoal;
-        window.depositToGoal = depositToGoal;
-        window.calculateSimulation = calculateSimulation;
-        window.exportData = exportData;
-        window.importData = importData;
-
-        // Configurar data de hoje no campo de transação
-        const dateEl = document.getElementById('tx-date');
-        if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
-
-        // Injetar Categorias nos selects de Configuração
-        const budgetSelect = document.getElementById('budget-category');
-        CATEGORIES.despesa.forEach(cat => {
-            const opt = document.createElement('option');
-            opt.value = cat.id;
-            opt.innerText = `${cat.icon} ${cat.name}`;
-            budgetSelect.appendChild(opt);
-        });
-
-        const filterCatSelect = document.getElementById('filter-category');
-        CATEGORIES.despesa.forEach(cat => {
-            const opt = document.createElement('option');
-            opt.value = cat.id;
-            opt.innerText = `🔴 ${cat.name}`;
-            filterCatSelect.appendChild(opt);
-        });
-        CATEGORIES.receita.forEach(cat => {
-            const opt = document.createElement('option');
-            opt.value = cat.id;
-            opt.innerText = `🟢 ${cat.name}`;
-            filterCatSelect.appendChild(opt);
-        });
-
-        // Atualizar select de categoria de transação baseado no fluxo atual
-        updateCategorySelect();
-
-        // Inicializar fluxo de autenticação e carregamento de dados sincronizados
-        authenticateUser();
-    </script>
+      );
+    }
+
+    // Inicialização da Aplicação no DOM Virtual do React 18
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
 </body>
 </html>
