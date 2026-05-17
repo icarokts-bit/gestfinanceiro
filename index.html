@@ -54,7 +54,7 @@
             <div class="flex items-center gap-2">
                 <div id="cloud-status" class="text-xs text-amber-400 mr-2 flex items-center gap-1">
                     <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                    Conectando Nuvem...
+                    Autenticando...
                 </div>
                 <button 
                     onclick="exportData()"
@@ -721,31 +721,33 @@
 
     <!-- Lógica de Estado e Controle do Sistema (Firebase Integration) -->
     <script type="module">
-        // Importando módulos Firebase CDN
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Configurações fornecidas do seu Firebase App
-        const firebaseConfig = {
-            apiKey: "AIzaSyCT_lmCQQEvSTfng4pITg7DJ5O-X0gWyXc",
-            authDomain: "gestfinanceira-a8a7b.firebaseapp.com",
-            projectId: "gestfinanceira-a8a7b",
-            storageBucket: "gestfinanceira-a8a7b.firebasestorage.app",
-            messagingSenderId: "622341942143",
-            appId: "1:622341942143:web:f0fc5c176903d3d71a884a",
-            measurementId: "G-84SYMRQ7F6"
-        };
+        // Fallback dinâmico caso executado em ambiente pré-configurado
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : {
+                apiKey: "AIzaSyCT_lmCQQEvSTfng4pITg7DJ5O-X0gWyXc",
+                authDomain: "gestfinanceira-a8a7b.firebaseapp.com",
+                projectId: "gestfinanceira-a8a7b",
+                storageBucket: "gestfinanceira-a8a7b.firebasestorage.app",
+                messagingSenderId: "622341942143",
+                appId: "1:622341942143:web:f0fc5c176903d3d71a884a",
+                measurementId: "G-84SYMRQ7F6"
+            };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'gestfinanceira-a8a7b';
 
         // Inicializando o Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-
-        // Identificador exclusivo de dispositivo para persistência
-        let deviceId = localStorage.getItem('financas_pro_uid');
-        if (!deviceId) {
-            deviceId = 'user_' + Math.random().toString(36).substring(2, 15);
-            localStorage.setItem('financas_pro_uid', deviceId);
-        }
+        const auth = getAuth(app);
+        
+        // Estado do usuário
+        let currentUser = null;
 
         // Configurações de Categorias Iniciais
         const CATEGORIES = {
@@ -766,7 +768,7 @@
             ]
         };
 
-        // Estado inicial da Aplicação
+        // Estado inicial da Aplicação (Fallback se offline ou primeiro acesso)
         let appState = {
             transactions: [
                 { id: '1', desc: 'Salário Principal', amount: 5500, type: 'receita', category: 'salario', date: '2026-05-01' },
@@ -794,7 +796,33 @@
             ]
         };
 
-        // Carregar do localStorage local para renderização imediata
+        // REGRA 3: Executar autenticação segura ANTES de fazer qualquer consulta no Firestore
+        async function authenticateUser() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    const userCredential = await signInWithCustomToken(auth, __initial_auth_token);
+                    currentUser = userCredential.user;
+                } else {
+                    const userCredential = await signInAnonymously(auth);
+                    currentUser = userCredential.user;
+                }
+                
+                // Inicializa a carga após login bem-sucedido
+                await loadFromFirestore();
+            } catch (error) {
+                console.error("Erro na autenticação do Firebase:", error);
+                const statusEl = document.getElementById('cloud-status');
+                if (statusEl) {
+                    statusEl.className = "text-xs text-rose-400 mr-2 flex items-center gap-1";
+                    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> Modo Offline (Auth)`;
+                }
+                // Carrega em localStorage em caso de falha de conexão inicial
+                loadStorage();
+                updateUI();
+            }
+        }
+
+        // Carregar do localStorage local para renderização imediata enquanto conecta
         function loadStorage() {
             const saved = localStorage.getItem('financas_pro_state');
             if (saved) {
@@ -812,16 +840,21 @@
             saveToFirestore();
         }
 
-        // Sincronização de saída (Envia dados para o Cloud Firestore)
+        // Sincronização de saída (Envia dados para o Cloud Firestore usando regras estritas)
         async function saveToFirestore() {
+            if (!currentUser) return; // REGRA 3: Proteger consultas exigindo auth prévio
+
+            const userId = currentUser.uid;
             const statusEl = document.getElementById('cloud-status');
             if (statusEl) {
                 statusEl.className = "text-xs text-amber-400 mr-2 flex items-center gap-1";
                 statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Sincronizando...`;
             }
             try {
-                // Salva tudo na coleção 'usuarios', usando o ID único do usuário
-                await setDoc(doc(db, "usuarios", deviceId), {
+                // REGRA 1: Caminho estrito para dados privados: /artifacts/{appId}/users/{userId}/{collectionName}/{documentId}
+                const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'userData', 'state');
+                
+                await setDoc(userDocRef, {
                     state: appState,
                     updatedAt: new Date().toISOString()
                 });
@@ -835,24 +868,32 @@
                     statusEl.className = "text-xs text-rose-400 mr-2 flex items-center gap-1";
                     statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> Erro Cloud`;
                 }
-                showNotification("Erro na permissão de gravação da nuvem. Verifique suas regras!", "error");
+                showNotification("Erro na permissão de gravação da nuvem.", "error");
             }
         }
 
-        // Sincronização de entrada (Carrega dados mais recentes da nuvem se existirem)
+        // Sincronização de entrada (Carrega dados mais recentes do caminho seguro da nuvem se existirem)
         async function loadFromFirestore() {
+            if (!currentUser) return; // REGRA 3: Exigir login prévio
+
+            const userId = currentUser.uid;
             const statusEl = document.getElementById('cloud-status');
             try {
-                const docSnap = await getDoc(doc(db, "usuarios", deviceId));
+                // REGRA 1: Caminho estrito de leitura correspondente
+                const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'userData', 'state');
+                const docSnap = await getDoc(userDocRef);
+                
                 if (docSnap.exists()) {
                     const cloudData = docSnap.data();
                     if (cloudData.state) {
                         appState = cloudData.state;
                         updateUI();
-                        showNotification("Dados de nuvem carregados com sucesso!", "success");
+                        showNotification("Dados de nuvem sincronizados com sucesso!", "success");
                     }
                 } else {
-                    // Sem registros anteriores na nuvem, faz upload do estado inicial
+                    // Sem registros anteriores na nuvem, faz upload do estado inicial ou carrega local
+                    loadStorage();
+                    updateUI();
                     await saveToFirestore();
                 }
                 if (statusEl) {
@@ -865,6 +906,8 @@
                     statusEl.className = "text-xs text-rose-400 mr-2 flex items-center gap-1";
                     statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> Modo Offline`;
                 }
+                loadStorage();
+                updateUI();
             }
         }
 
@@ -1260,6 +1303,7 @@
             const typeVal = document.getElementById('filter-type').value;
             const catVal = document.getElementById('filter-category').value;
 
+            // REGRA 2: Filtros e ordenação ocorrem exclusivamente em memória JavaScript local
             const filtered = appState.transactions.filter(t => {
                 const matchesSearch = t.desc.toLowerCase().includes(searchVal);
                 const matchesType = typeVal === 'all' || t.type === typeVal;
@@ -1294,4 +1338,404 @@
                         </span>
                     </td>
                     <td class="py-3.5 text-slate-500 text-xs">
-                        ${new Date(
+                        ${new Date(t.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                    </td>
+                    <td class="py-3.5 font-bold text-right ${isIncome ? 'text-emerald-600' : 'text-slate-800'}">
+                        ${isIncome ? '+' : '-'} R$ ${t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td class="py-3.5 text-center">
+                        <button onclick="deleteTransaction('${t.id}')" class="text-slate-300 hover:text-rose-600 p-1 rounded-md transition inline-block">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            lucide.createIcons();
+        }
+
+        // Renderizar a aba de limites e orçamentos
+        function renderBudgetsTab() {
+            const container = document.getElementById('budgets-list-container');
+            if (!container) return;
+
+            container.innerHTML = '';
+            const stats = getFinancialStats();
+
+            CATEGORIES.despesa.forEach(cat => {
+                const limit = appState.budgets[cat.id] || 0;
+                const spent = stats.categoryTotals[cat.id] || 0;
+                const pct = limit > 0 ? (spent / limit) * 100 : 0;
+
+                let progressColor = 'bg-emerald-500';
+                let bgSoftColor = 'bg-emerald-50';
+                let textStatus = 'text-emerald-700';
+
+                if (pct >= 100) {
+                    progressColor = 'bg-rose-500';
+                    bgSoftColor = 'bg-rose-50';
+                    textStatus = 'text-rose-700';
+                } else if (pct >= 80) {
+                    progressColor = 'bg-amber-500';
+                    bgSoftColor = 'bg-amber-50';
+                    textStatus = 'text-amber-700';
+                }
+
+                const div = document.createElement('div');
+                div.className = "p-4 border border-slate-150 rounded-2xl space-y-2.5 hover:border-slate-250 transition bg-slate-55/20";
+                div.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                <span>${cat.icon}</span>
+                                <span>${cat.name}</span>
+                            </span>
+                            <span class="text-[11px] text-slate-400">
+                                Limite estipulado: ${limit > 0 ? `R$ ${limit.toLocaleString('pt-BR')}` : 'Não definido'}
+                            </span>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-sm font-extrabold text-slate-900">
+                                R$ ${spent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                            ${limit > 0 ? `
+                                <span class="inline-block px-2.5 py-0.5 rounded-lg text-[10px] font-bold mt-1 ${bgSoftColor} ${textStatus}">
+                                    ${pct.toFixed(0)}% Utilizado
+                                </span>
+                            ` : ''}
+                        </div>
+                    </div>
+                    ${limit > 0 ? `
+                        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                            <div class="h-2.5 rounded-full transition-all duration-500 ${progressColor}" style="width: ${Math.min(100, pct)}%"></div>
+                        </div>
+                    ` : ''}
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // Atualizar ou fixar um teto de orçamento
+        function setBudgetLimit(e) {
+            e.preventDefault();
+            const category = document.getElementById('budget-category').value;
+            const amount = parseFloat(document.getElementById('budget-amount').value);
+
+            if (isNaN(amount) || amount <= 0) {
+                showNotification('Defina um valor de limite válido.', 'error');
+                return;
+            }
+
+            appState.budgets[category] = amount;
+            saveToStorage();
+            updateUI();
+
+            document.getElementById('budget-amount').value = '';
+            showNotification('Limite de orçamento fixado com sucesso!');
+        }
+
+        // Renderizar a aba de metas (Cofre)
+        function renderGoalsTab() {
+            const container = document.getElementById('goals-list-container');
+            const select = document.getElementById('deposit-goal-select');
+            if (!container || !select) return;
+
+            container.innerHTML = '';
+            select.innerHTML = '<option value="">Selecione a meta...</option>';
+
+            appState.goals.forEach(goal => {
+                const pct = Math.min(100, (goal.current / goal.target) * 100);
+                const isComplete = pct >= 100;
+
+                // Preencher listagem visual
+                const div = document.createElement('div');
+                div.className = "p-5 border border-slate-200 rounded-2xl flex flex-col justify-between space-y-4 hover:border-emerald-500 transition-all duration-300";
+                div.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h4 class="font-extrabold text-slate-800 text-base">${goal.name}</h4>
+                                <p class="text-xs text-slate-400">Prazo: {new Date(goal.deadline).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
+                            </div>
+                            <button onclick="deleteGoal('${goal.id}')" class="text-slate-300 hover:text-rose-600 transition">
+                                <i data-lucide="x" class="w-4.5 h-4.5"></i>
+                            </button>
+                        </div>
+
+                        <div class="mt-4 grid grid-cols-2 gap-1.5 text-xs">
+                            <div>
+                                <span class="text-slate-400 block">Acumulado</span>
+                                <span class="font-bold text-slate-900">R$ ${goal.current.toLocaleString('pt-BR')}</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-slate-400 block">Objetivo final</span>
+                                <span class="font-bold text-slate-900">R$ ${goal.target.toLocaleString('pt-BR')}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                            <div class="h-2.5 rounded-full transition-all duration-500 ${isComplete ? 'bg-emerald-500' : 'bg-indigo-600'}" style="width: ${pct}%"></div>
+                        </div>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="font-bold text-slate-650">${pct.toFixed(1)}% concluído</span>
+                            ${isComplete ? '<span class="text-emerald-600 font-bold">✨ Completa!</span>' : ''}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+
+                // Preencher select de depósito
+                const opt = document.createElement('option');
+                opt.value = goal.id;
+                opt.innerText = goal.name;
+                select.appendChild(opt);
+            });
+
+            if (appState.goals.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-2 py-10 text-center text-slate-400 text-sm">
+                        Nenhuma meta cadastrada no momento. Defina seus objetivos ao lado!
+                    </div>
+                `;
+            }
+
+            lucide.createIcons();
+        }
+
+        // Criar Meta de Poupança
+        function createSavingGoal(e) {
+            e.preventDefault();
+            const name = document.getElementById('goal-name').value.trim();
+            const target = parseFloat(document.getElementById('goal-target').value);
+            const current = parseFloat(document.getElementById('goal-current').value) || 0;
+            const deadline = document.getElementById('goal-deadline').value;
+
+            if (!name || isNaN(target) || target <= 0 || !deadline) {
+                showNotification('Insira dados válidos para a meta.', 'error');
+                return;
+            }
+
+            const newGoal = {
+                id: Date.now().toString(),
+                name,
+                target,
+                current,
+                deadline
+            };
+
+            appState.goals.push(newGoal);
+            saveToStorage();
+            updateUI();
+
+            // Limpar formulário
+            document.getElementById('goal-name').value = '';
+            document.getElementById('goal-target').value = '';
+            document.getElementById('goal-current').value = '';
+            document.getElementById('goal-deadline').value = '';
+
+            showNotification('Objetivo do cofre criado com sucesso!');
+        }
+
+        // Deletar Meta
+        function deleteGoal(id) {
+            appState.goals = appState.goals.filter(g => g.id !== id);
+            saveToStorage();
+            updateUI();
+            showNotification('Meta deletada do cofre.', 'warning');
+        }
+
+        // Depositar em uma Meta Existente
+        function depositToGoal(e) {
+            e.preventDefault();
+            const goalId = document.getElementById('deposit-goal-select').value;
+            const amount = parseFloat(document.getElementById('deposit-amount').value);
+
+            if (!goalId || isNaN(amount) || amount <= 0) {
+                showNotification('Selecione uma meta e um valor válido.', 'error');
+                return;
+            }
+
+            const goal = appState.goals.find(g => g.id === goalId);
+            if (!goal) return;
+
+            goal.current = Math.min(goal.target, goal.current + amount);
+
+            // Registrar no extrato também
+            const autoTx = {
+                id: Date.now().toString(),
+                desc: `Poupança: ${goal.name}`,
+                amount,
+                type: 'despesa',
+                category: 'outros_desp',
+                date: new Date().toISOString().split('T')[0]
+            };
+            appState.transactions.unshift(autoTx);
+
+            saveToStorage();
+            updateUI();
+
+            document.getElementById('deposit-amount').value = '';
+            showNotification(`Depósito de R$ ${amount.toLocaleString('pt-BR')} adicionado a ${goal.name}!`);
+        }
+
+        // Calcular Projeção de Juros Compostos
+        function calculateSimulation() {
+            const initial = parseFloat(document.getElementById('sim-initial').value) || 0;
+            const monthly = parseFloat(document.getElementById('sim-monthly').value) || 0;
+            const annualRate = parseFloat(document.getElementById('sim-rate').value) || 0;
+            const years = parseInt(document.getElementById('sim-years').value) || 5;
+
+            const monthlyRate = Math.pow(1 + (annualRate / 100), 1 / 12) - 1;
+            const totalMonths = years * 12;
+
+            let balance = initial;
+            let totalInvested = initial;
+
+            const timeline = [];
+
+            for (let m = 1; m <= totalMonths; m++) {
+                const yieldGains = balance * monthlyRate;
+                balance += yieldGains + monthly;
+                totalInvested += monthly;
+
+                // Logar a cada 12 meses (anual) ou no último mês
+                if (m % 12 === 0 || m === totalMonths) {
+                    timeline.push({
+                        year: Math.ceil(m / 12),
+                        total: balance,
+                        invested: totalInvested,
+                        gains: balance - totalInvested
+                    });
+                }
+            }
+
+            // Exibir resultados em destaque
+            const finalValue = balance;
+            const totalGains = finalValue - totalInvested;
+
+            document.getElementById('sim-res-total').innerText = `R$ ${finalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('sim-res-invested').innerText = `R$ ${totalInvested.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('sim-res-gains').innerText = `R$ ${totalGains.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            // Renderizar gráfico de colunas
+            const chartWrapper = document.getElementById('simulation-chart-wrapper');
+            chartWrapper.innerHTML = '';
+
+            timeline.forEach(point => {
+                const pctTotal = finalValue > 0 ? (point.total / finalValue) * 100 : 0;
+                const pctInvested = finalValue > 0 ? (point.invested / finalValue) * 100 : 0;
+
+                // Altura proporcional em pixels para o wrapper de 256px (h-64)
+                const totalHeightPx = (pctTotal * 1.8).toFixed(0);
+                const investedHeightPct = ((point.invested / point.total) * 100).toFixed(0);
+
+                const col = document.createElement('div');
+                col.className = "flex-1 flex flex-col items-center group relative z-10";
+                col.innerHTML = `
+                    <!-- Tooltip ao passar o mouse -->
+                    <div class="absolute bottom-full mb-2 bg-slate-950 text-white rounded-xl p-3 shadow-2xl text-[11px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-30 leading-normal">
+                        <p class="font-extrabold text-white mb-0.5">Ano ${point.year}</p>
+                        <p class="text-indigo-350">Investido: R$ ${point.invested.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                        <p class="text-amber-455 font-bold">Total: R$ ${point.total.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                    </div>
+
+                    <!-- Coluna com cores sobrepostas -->
+                    <div class="w-full max-w-[45px] bg-slate-100 rounded-t-lg overflow-hidden flex flex-col justify-end relative shadow-sm" style="height: ${totalHeightPx}px">
+                        <div class="bg-amber-400 w-full h-full"></div>
+                        <div class="bg-indigo-600 w-full absolute bottom-0" style="height: ${investedHeightPct}%"></div>
+                    </div>
+
+                    <span class="text-[10px] font-bold text-slate-500 mt-2">Ano ${point.year}</span>
+                `;
+                chartWrapper.appendChild(col);
+            });
+        }
+
+        // Exportar dados para um arquivo JSON local
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "financas_pro_backup.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            showNotification('Backup exportado com sucesso!');
+        }
+
+        // Importar dados de um arquivo JSON local
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (imported.transactions && imported.budgets && imported.goals) {
+                        appState = imported;
+                        saveToStorage();
+                        updateUI();
+                        showNotification('Backup restaurado com sucesso!');
+                    } else {
+                        showNotification('Arquivo inválido ou incompleto.', 'error');
+                    }
+                } catch(err) {
+                    showNotification('Erro ao processar arquivo JSON.', 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // Exportar escopos para o escopo global (Exclusivo para uso de Inline Events em ES Modules)
+        window.switchTab = switchTab;
+        window.addTransaction = addTransaction;
+        window.deleteTransaction = deleteTransaction;
+        window.updateCategorySelect = updateCategorySelect;
+        window.renderTransactionsList = renderTransactionsList;
+        window.setBudgetLimit = setBudgetLimit;
+        window.createSavingGoal = createSavingGoal;
+        window.deleteGoal = deleteGoal;
+        window.depositToGoal = depositToGoal;
+        window.calculateSimulation = calculateSimulation;
+        window.exportData = exportData;
+        window.importData = importData;
+
+        // Configurar data de hoje no campo de transação
+        const dateEl = document.getElementById('tx-date');
+        if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+
+        // Injetar Categorias nos selects de Configuração
+        const budgetSelect = document.getElementById('budget-category');
+        CATEGORIES.despesa.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.id;
+            opt.innerText = `${cat.icon} ${cat.name}`;
+            budgetSelect.appendChild(opt);
+        });
+
+        const filterCatSelect = document.getElementById('filter-category');
+        CATEGORIES.despesa.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.id;
+            opt.innerText = `🔴 ${cat.name}`;
+            filterCatSelect.appendChild(opt);
+        });
+        CATEGORIES.receita.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.id;
+            opt.innerText = `🟢 ${cat.name}`;
+            filterCatSelect.appendChild(opt);
+        });
+
+        // Atualizar select de categoria de transação baseado no fluxo atual
+        updateCategorySelect();
+
+        // Inicializar fluxo de autenticação e carregamento de dados sincronizados
+        authenticateUser();
+    </script>
+</body>
+</html>
