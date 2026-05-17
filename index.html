@@ -97,6 +97,12 @@
       outros_desp: 300
     };
 
+    const DEFAULT_CC_SETTINGS = {
+      limit: 3000,
+      closingDay: 5,
+      dueDay: 15
+    };
+
     // ---------------------------------------------------------
     // COMPONENTE DE ÍCONES VETORIAIS (SVG INTEGRADO)
     // ---------------------------------------------------------
@@ -125,7 +131,9 @@
         loader: <><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><circle cx="12" cy="12" r="10" stroke-dasharray="10 5" className="animate-spin" /></>,
         database: <><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></>,
         copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>,
-        check: <polyline points="20 6 9 17 4 12"/>
+        check: <polyline points="20 6 9 17 4 12"/>,
+        creditCard: <><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M4 16h4"/></>,
+        settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>
       };
 
       return (
@@ -159,15 +167,22 @@
       const [budgets, setBudgets] = useState(DEFAULT_BUDGETS);
       const [goals, setGoals] = useState([]);
 
+      // Dados do Sistema de Cartão de Crédito Sincronizados
+      const [ccSettings, setCcSettings] = useState(DEFAULT_CC_SETTINGS);
+      const [ccTransactions, setCcTransactions] = useState([]);
+
       // Estados de UI e Navegação
       const [activeTab, setActiveTab] = useState('dashboard');
       const [notification, setNotification] = useState(null);
+      const [paymentModal, setPaymentModal] = useState({ isOpen: false, invoiceKey: null, label: '', total: 0 });
 
       // Formulários e Estados Interativos
       const [newTx, setNewTx] = useState({ desc: '', amount: '', type: 'despesa', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
+      const [newCcTx, setNewCcTx] = useState({ desc: '', amount: '', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
       const [goalDeposit, setGoalDeposit] = useState({ goalId: '', amount: '' });
       const [newGoal, setNewGoal] = useState({ name: '', target: '', current: '', deadline: '' });
       const [budgetForm, setBudgetForm] = useState({ category: 'alimentacao', amount: '' });
+      const [ccSettingsForm, setCcSettingsForm] = useState({ limit: '', closingDay: '', dueDay: '' });
 
       // Estados do Simulador de Juros Compostos
       const [simInitial, setSimInitial] = useState(5000);
@@ -184,6 +199,17 @@
         setNotification({ message, type });
         setTimeout(() => setNotification(null), 4000);
       };
+
+      // Inicializa campos de definições de cartão quando carregado
+      useEffect(() => {
+        if (ccSettings) {
+          setCcSettingsForm({
+            limit: ccSettings.limit.toString(),
+            closingDay: ccSettings.closingDay.toString(),
+            dueDay: ccSettings.dueDay.toString()
+          });
+        }
+      }, [ccSettings]);
 
       // Copiar regras de segurança do Firestore para o Clipboard
       const handleCopyRules = () => {
@@ -209,20 +235,26 @@
           const localTx = localStorage.getItem('finpro_transactions');
           const localBudgets = localStorage.getItem('finpro_budgets');
           const localGoals = localStorage.getItem('finpro_goals');
+          const localCcSettings = localStorage.getItem('finpro_cc_settings');
+          const localCcTx = localStorage.getItem('finpro_cc_transactions');
           
           if (localTx) setTransactions(JSON.parse(localTx));
           if (localBudgets) setBudgets(JSON.parse(localBudgets));
           if (localGoals) setGoals(JSON.parse(localGoals));
+          if (localCcSettings) setCcSettings(JSON.parse(localCcSettings));
+          if (localCcTx) setCcTransactions(JSON.parse(localCcTx));
         } catch (e) {
           console.error("Erro ao carregar do armazenamento local:", e);
         }
       };
 
-      const saveToLocalStorage = (txs, budg, gls) => {
+      const saveToLocalStorage = (txs, budg, gls, ccSet, ccTx) => {
         try {
           if (txs) localStorage.setItem('finpro_transactions', JSON.stringify(txs));
           if (budg) localStorage.setItem('finpro_budgets', JSON.stringify(budg));
           if (gls) localStorage.setItem('finpro_goals', JSON.stringify(gls));
+          if (ccSet) localStorage.setItem('finpro_cc_settings', JSON.stringify(ccSet));
+          if (ccTx) localStorage.setItem('finpro_cc_transactions', JSON.stringify(ccTx));
         } catch (e) {
           console.error("Erro ao gravar dados localmente:", e);
         }
@@ -274,6 +306,8 @@
         const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
         const goalsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'goals');
         const budgetsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', 'limits');
+        const ccSettingsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditCard', 'settings');
+        const ccTxCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions');
 
         let active = true;
 
@@ -286,7 +320,7 @@
           }
         };
 
-        // Regra 2: Obter transações e aplicar lógica de ordenação e filtros em memória no JavaScript
+        // Transações de Caixa
         const unsubTx = onSnapshot(txCollectionRef, 
           (snapshot) => {
             if (!active) return;
@@ -296,14 +330,14 @@
             });
             txList.sort((a, b) => new Date(b.date) - new Date(a.date));
             setTransactions(txList);
-            saveToLocalStorage(txList, null, null);
+            saveToLocalStorage(txList, null, null, null, null);
             setDbStatus('synced');
             setLoading(false);
           },
           (err) => handlePermissionError(err, 'transações')
         );
 
-        // Ouvinte em tempo real para Metas de Poupança
+        // Metas de Poupança
         const unsubGoals = onSnapshot(goalsCollectionRef, 
           (snapshot) => {
             if (!active) return;
@@ -312,26 +346,58 @@
               goalsList.push({ id: docSnap.id, ...docSnap.data() });
             });
             setGoals(goalsList);
-            saveToLocalStorage(null, null, goalsList);
+            saveToLocalStorage(null, null, goalsList, null, null);
           },
           (err) => handlePermissionError(err, 'metas')
         );
 
-        // Ouvinte em tempo real para Orçamentos (Limites)
+        // Orçamentos (Limites)
         const unsubBudgets = onSnapshot(budgetsDocRef, 
           (docSnap) => {
             if (!active) return;
             if (docSnap.exists()) {
               const data = docSnap.data();
               setBudgets(data);
-              saveToLocalStorage(null, data, null);
+              saveToLocalStorage(null, data, null, null, null);
             } else {
               setDoc(budgetsDocRef, DEFAULT_BUDGETS).catch(() => {});
               setBudgets(DEFAULT_BUDGETS);
-              saveToLocalStorage(null, DEFAULT_BUDGETS, null);
+              saveToLocalStorage(null, DEFAULT_BUDGETS, null, null, null);
             }
           },
           (err) => handlePermissionError(err, 'orçamentos')
+        );
+
+        // Definições de Cartão de Crédito
+        const unsubCcSettings = onSnapshot(ccSettingsDocRef, 
+          (docSnap) => {
+            if (!active) return;
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              setCcSettings(data);
+              saveToLocalStorage(null, null, null, data, null);
+            } else {
+              setDoc(ccSettingsDocRef, DEFAULT_CC_SETTINGS).catch(() => {});
+              setCcSettings(DEFAULT_CC_SETTINGS);
+              saveToLocalStorage(null, null, null, DEFAULT_CC_SETTINGS, null);
+            }
+          },
+          (err) => handlePermissionError(err, 'definições de cartão')
+        );
+
+        // Transações do Cartão de Crédito
+        const unsubCcTx = onSnapshot(ccTxCollectionRef, 
+          (snapshot) => {
+            if (!active) return;
+            const ccTxList = [];
+            snapshot.forEach(docSnap => {
+              ccTxList.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            ccTxList.sort((a, b) => new Date(b.date) - new Date(a.date));
+            setCcTransactions(ccTxList);
+            saveToLocalStorage(null, null, null, null, ccTxList);
+          },
+          (err) => handlePermissionError(err, 'movimentos de cartão')
         );
 
         return () => {
@@ -339,6 +405,8 @@
           unsubTx();
           unsubGoals();
           unsubBudgets();
+          unsubCcSettings();
+          unsubCcTx();
         };
       }, [user]);
 
@@ -346,7 +414,7 @@
       // 3. OPERAÇÕES DE GRAVAÇÃO (ESCRITAS COM COMPATIBILIDADE LOCAL)
       // ---------------------------------------------------------
 
-      // Adicionar Transação
+      // Adicionar Transação de Caixa
       const handleAddTransaction = async (e) => {
         e.preventDefault();
         if (!newTx.desc.trim() || !newTx.amount || parseFloat(newTx.amount) <= 0) {
@@ -383,11 +451,11 @@
         const localItem = { id: Date.now().toString(), ...txData };
         const updated = [localItem, ...transactions];
         setTransactions(updated);
-        saveToLocalStorage(updated, null, null);
+        saveToLocalStorage(updated, null, null, null, null);
         triggerNotification('Guardado localmente (Modo Offline)!');
       };
 
-      // Remover Transação
+      // Remover Transação de Caixa
       const handleDeleteTransaction = async (id) => {
         if (dbStatus === 'synced' && user) {
           try {
@@ -402,8 +470,174 @@
         
         const updated = transactions.filter(t => t.id !== id);
         setTransactions(updated);
-        saveToLocalStorage(updated, null, null);
+        saveToLocalStorage(updated, null, null, null, null);
         triggerNotification('Transação apagada localmente!', 'warning');
+      };
+
+      // Adicionar Transação de Cartão de Crédito (Compra)
+      const handleAddCcTransaction = async (e) => {
+        e.preventDefault();
+        const amt = parseFloat(newCcTx.amount);
+        if (!newCcTx.desc.trim() || isNaN(amt) || amt <= 0) {
+          triggerNotification('Preencha os campos com valores válidos.', 'error');
+          return;
+        }
+
+        // Validar limite disponível antes de aprovar a transação de crédito
+        if (amt > availableCcLimit) {
+          triggerNotification('Transação Recusada: Limite de Crédito Insuficiente!', 'error');
+          return;
+        }
+
+        const ccTxData = {
+          desc: newCcTx.desc.trim(),
+          amount: amt,
+          category: newCcTx.category,
+          date: newCcTx.date || new Date().toISOString().split('T')[0],
+          paid: false,
+          createdAt: new Date().toISOString()
+        };
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const ccTxCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions');
+            await addDoc(ccTxCollectionRef, ccTxData);
+            triggerNotification('Compra a crédito registada com sucesso!');
+          } catch (err) {
+            console.error("Erro ao registar na nuvem, a aplicar localmente:", err);
+            saveCcTxLocally(ccTxData);
+          }
+        } else {
+          saveCcTxLocally(ccTxData);
+        }
+
+        setNewCcTx({ desc: '', amount: '', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
+      };
+
+      const saveCcTxLocally = (ccTxData) => {
+        const localItem = { id: Date.now().toString(), ...ccTxData };
+        const updated = [localItem, ...ccTransactions];
+        setCcTransactions(updated);
+        saveToLocalStorage(null, null, null, null, updated);
+        triggerNotification('Compra a crédito guardada localmente!');
+      };
+
+      // Remover Transação de Cartão de Crédito
+      const handleDeleteCcTransaction = async (id) => {
+        if (dbStatus === 'synced' && user) {
+          try {
+            const ccTxDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions', id);
+            await deleteDoc(ccTxDocRef);
+            triggerNotification('Registo do cartão apagado!', 'warning');
+            return;
+          } catch (err) {
+            console.error("Erro ao apagar do Firebase:", err);
+          }
+        }
+        
+        const updated = ccTransactions.filter(t => t.id !== id);
+        setCcTransactions(updated);
+        saveToLocalStorage(null, null, null, null, updated);
+        triggerNotification('Registo apagado localmente!', 'warning');
+      };
+
+      // Guardar Configurações de Cartão de Crédito
+      const handleSaveCcSettings = async (e) => {
+        e.preventDefault();
+        const lim = parseFloat(ccSettingsForm.limit);
+        const closing = parseInt(ccSettingsForm.closingDay);
+        const due = parseInt(ccSettingsForm.dueDay);
+
+        if (isNaN(lim) || lim <= 0 || isNaN(closing) || closing < 1 || closing > 31 || isNaN(due) || due < 1 || due > 31) {
+          triggerNotification('Dados de parametrização do cartão inválidos.', 'error');
+          return;
+        }
+
+        const newSettings = { limit: lim, closingDay: closing, dueDay: due };
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const ccSettingsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditCard', 'settings');
+            await setDoc(ccSettingsDocRef, newSettings);
+            triggerNotification('Definições do cartão atualizadas!');
+          } catch (err) {
+            console.error("Erro ao guardar definições na nuvem:", err);
+            saveCcSettingsLocally(newSettings);
+          }
+        } else {
+          saveCcSettingsLocally(newSettings);
+        }
+      };
+
+      const saveCcSettingsLocally = (settings) => {
+        setCcSettings(settings);
+        saveToLocalStorage(null, null, null, settings, null);
+        triggerNotification('Definições do cartão guardadas localmente!');
+      };
+
+      // Processar pagamento da Fatura (Dedução de Saldo e Liquidação de Compras)
+      const handleConfirmPayment = async () => {
+        const { invoiceKey, label, total } = paymentModal;
+        if (!invoiceKey) return;
+
+        // Validar se há saldo líquido suficiente para liquidar a fatura
+        if (stats.balance < total) {
+          triggerNotification('Erro: Saldo líquido disponível em conta insuficiente!', 'error');
+          setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0 });
+          return;
+        }
+
+        // 1. Criar transação correspondente de despesa na conta de caixa principal
+        const paymentTx = {
+          desc: `Liquidação Fatura Cartão - ${label}`,
+          amount: total,
+          type: 'despesa',
+          category: 'outros_desp',
+          date: new Date().toISOString().split('T')[0],
+          createdAt: new Date().toISOString()
+        };
+
+        // Identificar as transações pertencentes a este período de faturação para lhes dar flag "pago"
+        const txsToUpdate = groupedInvoices[invoiceKey]?.transactions || [];
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            // Lançar transação de caixa
+            const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
+            await addDoc(txCollectionRef, paymentTx);
+
+            // Atualizar transações de cartão de crédito correspondentes
+            for (const item of txsToUpdate) {
+              const ccDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions', item.id);
+              await updateDoc(ccDocRef, { paid: true });
+            }
+            triggerNotification(`Fatura de ${label} paga com sucesso via Firebase!`);
+          } catch (err) {
+            console.error("Erro no processamento do pagamento na nuvem:", err);
+            processPaymentLocally(paymentTx, txsToUpdate);
+          }
+        } else {
+          processPaymentLocally(paymentTx, txsToUpdate);
+        }
+
+        setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0 });
+      };
+
+      const processPaymentLocally = (paymentTx, txsToUpdate) => {
+        // Lançamento de Caixa
+        const newLocalTx = { id: Date.now().toString(), ...paymentTx };
+        const updatedTxs = [newLocalTx, ...transactions];
+        setTransactions(updatedTxs);
+
+        // Atualizar flag pago dos movimentos locais de cartão
+        const idsToPay = txsToUpdate.map(t => t.id);
+        const updatedCcTxs = ccTransactions.map(t => 
+          idsToPay.includes(t.id) ? { ...t, paid: true } : t
+        );
+        setCcTransactions(updatedCcTxs);
+
+        saveToLocalStorage(updatedTxs, null, null, null, updatedCcTxs);
+        triggerNotification(`Fatura liquidada localmente!`);
       };
 
       // Criar Meta de Poupança
@@ -444,7 +678,7 @@
         const localGoal = { id: Date.now().toString(), ...goalData };
         const updated = [...goals, localGoal];
         setGoals(updated);
-        saveToLocalStorage(null, null, updated);
+        saveToLocalStorage(null, null, updated, null, null);
         triggerNotification('Meta de poupança adicionada localmente!');
       };
 
@@ -494,7 +728,7 @@
         const updatedTxs = [localTx, ...transactions];
         setTransactions(updatedTxs);
 
-        saveToLocalStorage(updatedTxs, null, updatedGoals);
+        saveToLocalStorage(updatedTxs, null, updatedGoals, null, null);
         setGoalDeposit({ goalId: '', amount: '' });
         triggerNotification(`Reforço de R$ ${amt.toFixed(2)} registado localmente!`);
       };
@@ -514,7 +748,7 @@
 
         const updated = goals.filter(g => g.id !== id);
         setGoals(updated);
-        saveToLocalStorage(null, null, updated);
+        saveToLocalStorage(null, null, updated, null, null);
         triggerNotification('Meta de poupança removida localmente.', 'warning');
       };
 
@@ -550,7 +784,7 @@
 
       const saveBudgetLocally = (updatedBudgets) => {
         setBudgets(updatedBudgets);
-        saveToLocalStorage(null, updatedBudgets, null);
+        saveToLocalStorage(null, updatedBudgets, null, null, null);
         triggerNotification('Limite de despesa atualizado localmente!');
       };
 
@@ -578,12 +812,12 @@
 
         const localMockTxs = mockTxs.map((m, idx) => ({ id: `mock-${idx}`, ...m, createdAt: new Date().toISOString() }));
         setTransactions(localMockTxs);
-        saveToLocalStorage(localMockTxs, null, null);
+        saveToLocalStorage(localMockTxs, null, null, null, null);
         triggerNotification('Dados demonstrativos carregados localmente!');
       };
 
       // ---------------------------------------------------------
-      // 4. MÉTODOS DE CÁLCULO E SIMULAÇÃO
+      // 5. MÉTODOS DE CÁLCULO E LOGICA DE FATURAÇÃO
       // ---------------------------------------------------------
       const stats = useMemo(() => {
         let income = 0;
@@ -609,6 +843,90 @@
         return { income, expense, balance, savingsRate, categoryTotals };
       }, [transactions]);
 
+      // Atribuir as compras a crédito ao seu respetivo período de faturação (Mês da Fatura)
+      const groupedInvoices = useMemo(() => {
+        const invoices = {};
+        const closingDay = ccSettings?.closingDay || 5;
+
+        ccTransactions.forEach(tx => {
+          const dateObj = new Date(tx.date);
+          const year = dateObj.getUTCFullYear();
+          const month = dateObj.getUTCMonth(); // 0-11
+          const day = dateObj.getUTCDate();
+
+          let invoiceYear = year;
+          let invoiceMonth = month;
+
+          // Se a compra for efetuada APÓS o dia de fecho, entra na fatura do mês seguinte
+          if (day > closingDay) {
+            invoiceMonth += 1;
+            if (invoiceMonth > 11) {
+              invoiceMonth = 0;
+              invoiceYear += 1;
+            }
+          }
+
+          const invoiceKey = `${invoiceYear}-${String(invoiceMonth + 1).padStart(2, '0')}`;
+          
+          const labelDate = new Date(invoiceYear, invoiceMonth);
+          const rawLabel = labelDate.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+          const invoiceLabel = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+
+          if (!invoices[invoiceKey]) {
+            invoices[invoiceKey] = {
+              key: invoiceKey,
+              label: invoiceLabel,
+              transactions: [],
+              total: 0,
+              isPaid: true
+            };
+          }
+
+          invoices[invoiceKey].transactions.push(tx);
+          invoices[invoiceKey].total += parseFloat(tx.amount);
+          if (!tx.paid) {
+            invoices[invoiceKey].isPaid = false;
+          }
+        });
+
+        return invoices;
+      }, [ccTransactions, ccSettings]);
+
+      // Descobrir a Chave da Fatura Ativa (Mês corrente de gastos)
+      const activeInvoiceKey = useMemo(() => {
+        const today = new Date();
+        const closingDay = ccSettings?.closingDay || 5;
+        let yr = today.getFullYear();
+        let m = today.getMonth();
+        const d = today.getDate();
+
+        if (d > closingDay) {
+          m += 1;
+          if (m > 11) {
+            m = 0;
+            yr += 1;
+          }
+        }
+        return `${yr}-${String(m + 1).padStart(2, '0')}`;
+      }, [ccSettings]);
+
+      // Dívida total não paga e Limite disponível do Cartão
+      const totalUnpaidCcAmount = useMemo(() => {
+        return ccTransactions
+          .filter(tx => !tx.paid)
+          .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+      }, [ccTransactions]);
+
+      const availableCcLimit = useMemo(() => {
+        const totalLimit = ccSettings?.limit || 3000;
+        return Math.max(0, totalLimit - totalUnpaidCcAmount);
+      }, [ccSettings, totalUnpaidCcAmount]);
+
+      // Valor da Fatura Aberta no mês ativo
+      const activeInvoiceTotal = useMemo(() => {
+        return groupedInvoices[activeInvoiceKey]?.isPaid ? 0 : (groupedInvoices[activeInvoiceKey]?.total || 0);
+      }, [groupedInvoices, activeInvoiceKey]);
+
       // Alertas Inteligentes de Saúde Financeira
       const financialTips = useMemo(() => {
         const tips = [];
@@ -618,6 +936,11 @@
           tips.push({ type: 'info', text: `A sua taxa de poupança situa-se em ${stats.savingsRate.toFixed(1)}%. Tente poupar um pouco mais para atingir a meta recomendada de 20%.` });
         } else if (transactions.length > 0) {
           tips.push({ type: 'danger', text: `Atenção: As suas despesas superaram as receitas este mês. Avalie conter despesas não essenciais.` });
+        }
+
+        // Alerta de Limite do Cartão de Crédito
+        if (availableCcLimit < (ccSettings?.limit * 0.15)) {
+          tips.push({ type: 'warning', text: `Cartão de Crédito: O limite disponível do seu cartão está abaixo dos 15%. Reduza compras a crédito.` });
         }
 
         Object.keys(budgets).forEach(cat => {
@@ -632,7 +955,7 @@
         });
 
         return tips;
-      }, [stats, budgets, transactions]);
+      }, [stats, budgets, transactions, availableCcLimit, ccSettings]);
 
       // Simulador de Juros Compostos
       const investmentSimulation = useMemo(() => {
@@ -673,6 +996,48 @@
       return (
         <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
           
+          {/* Modal de Confirmação de Pagamento de Fatura (Customizado - Sem use de Alert/Confirm) */}
+          {paymentModal.isOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all">
+                <div className="flex items-center gap-3 text-emerald-600 mb-4">
+                  <Icon name="checkCircle" className="w-8 h-8 shrink-0" />
+                  <h3 className="text-lg font-black text-slate-900">Confirmar Liquidação de Fatura</h3>
+                </div>
+                
+                <div className="text-sm text-slate-600 space-y-3 mb-6">
+                  <p>Está prestes a liquidar a fatura do cartão de crédito referente a <strong className="text-slate-900">{paymentModal.label}</strong>.</p>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                    <div className="flex justify-between items-center text-xs mb-1">
+                      <span>Total da Fatura:</span>
+                      <strong className="text-slate-900 text-sm">R$ {paymentModal.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span>Saldo em Conta Bancária:</span>
+                      <strong className="text-emerald-700 text-sm">R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 italic">Ao prosseguir, uma despesa de igual valor será gerada na sua conta principal e todos os movimentos do cartão associados a este mês serão marcados como pagos.</p>
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <button 
+                    onClick={() => setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0 })}
+                    className="px-4 py-2.5 rounded-xl border font-bold text-xs text-slate-500 hover:bg-slate-50 transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={handleConfirmPayment}
+                    className="px-5 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition"
+                  >
+                    Confirmar Pagamento
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Cabeçalho */}
           <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-md">
             <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -769,6 +1134,17 @@
                       Extrato de Transações ({transactions.length})
                     </button>
 
+                    {/* Novo Item: Cartão de Crédito */}
+                    <button 
+                      onClick={() => setActiveTab('credit-card')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
+                        activeTab === 'credit-card' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <Icon name="creditCard" className="w-4 h-4" />
+                      Cartão de Crédito
+                    </button>
+
                     <button 
                       onClick={() => setActiveTab('budgets')}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
@@ -819,15 +1195,15 @@
                 {activeTab === 'dashboard' && (
                   <div className="space-y-6">
                     
-                    {/* Sumários Financeiros */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Quatro Sumários Financeiros (Corrente + Crédito) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold text-slate-400 uppercase">Saldo Consolidado</p>
-                          <p className={`text-2xl font-black ${stats.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                          <p className="text-xs font-semibold text-slate-400 uppercase">Saldo Líquido</p>
+                          <p className={`text-xl font-black ${stats.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
                             R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-xs text-slate-400 mt-1">Sincronizado na Nuvem</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Líquido em conta</p>
                         </div>
                         <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
                           <Icon name="dollarSign" className="w-5 h-5" />
@@ -837,10 +1213,10 @@
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
                           <p className="text-xs font-semibold text-slate-400 uppercase">Receitas</p>
-                          <p className="text-2xl font-black text-emerald-600">
+                          <p className="text-xl font-black text-emerald-600">
                             + R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-xs text-slate-400 mt-1">Total acumulado este mês</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Entradas em conta</p>
                         </div>
                         <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
                           <Icon name="arrowUpRight" className="w-5 h-5" />
@@ -849,14 +1225,28 @@
 
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold text-slate-400 uppercase">Despesas</p>
-                          <p className="text-2xl font-black text-rose-600">
+                          <p className="text-xs font-semibold text-slate-400 uppercase">Despesas Caixa</p>
+                          <p className="text-xl font-black text-rose-600">
                             - R$ {stats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-xs text-slate-400 mt-1">Total faturado no mês</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Contas pagas à vista</p>
                         </div>
                         <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
                           <Icon name="arrowDownRight" className="w-5 h-5" />
+                        </div>
+                      </div>
+
+                      {/* Nova métrica de crédito no dashboard */}
+                      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-400 uppercase">Fatura Crédito</p>
+                          <p className="text-xl font-black text-amber-600">
+                            R$ {activeInvoiceTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-1">Ciclo corrente aberto</p>
+                        </div>
+                        <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
+                          <Icon name="creditCard" className="w-5 h-5" />
                         </div>
                       </div>
                     </div>
@@ -876,7 +1266,7 @@
                             <p className="text-xs">Não existem despesas registadas no banco de dados.</p>
                             <button 
                               onClick={handleGenerateMockData}
-                              className="text-xs bg-slate-900 text-white font-bold px-4 py-2 rounded-xl hover:bg-slate-850"
+                              className="text-xs bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-slate-850"
                             >
                               Carregar Base Demonstrativa
                             </button>
@@ -946,7 +1336,7 @@
                       
                       {/* Adicionar Transação */}
                       <div className="md:col-span-4 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-                        <h3 className="font-extrabold text-slate-900 text-base mb-4">Novo Registo</h3>
+                        <h3 className="font-extrabold text-slate-900 text-base mb-4">Novo Registo (Dinheiro/Caixa)</h3>
                         <form onSubmit={handleAddTransaction} className="space-y-3">
                           <div>
                             <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Descrição</label>
@@ -1169,7 +1559,276 @@
                   </div>
                 )}
 
-                {/* 3. SEPARADOR: LIMITES DE ORÇAMENTO */}
+                {/* 3. NOVO SEPARADOR COMPLETO: SISTEMA DE CARTÃO DE CRÉDITO */}
+                {activeTab === 'credit-card' && (
+                  <div className="space-y-6">
+                    
+                    {/* Linha Superior: Cartão Virtual e Formulário de Ajustes */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                      
+                      {/* Cartão de Crédito Visualmente Premium */}
+                      <div className="md:col-span-7 bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-xl border border-slate-700/50 flex flex-col justify-between relative overflow-hidden min-h-[220px]">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
+                        <div className="absolute bottom-0 left-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl"></div>
+
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Cartão FinançasPro</p>
+                            <h3 className="text-lg font-black tracking-tight mt-1 text-slate-100">Crédito Visa Platinum</h3>
+                          </div>
+                          <div className="bg-white/10 px-3 py-1 rounded-full text-[9px] font-mono border border-white/10">
+                            CVV SECURE
+                          </div>
+                        </div>
+
+                        {/* Informações de Balanço do Cartão */}
+                        <div className="grid grid-cols-2 gap-4 my-4">
+                          <div>
+                            <p className="text-[10px] text-slate-400 uppercase">Limite Disponível</p>
+                            <p className="text-xl font-extrabold text-emerald-400">
+                              R$ {availableCcLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-slate-400 uppercase">Total Utilizado</p>
+                            <p className="text-xl font-extrabold text-amber-500">
+                              R$ {totalUnpaidCcAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-end border-t border-white/5 pt-3 text-[10px]">
+                          <div>
+                            <span className="text-slate-400 mr-2">Fecho:</span>
+                            <strong className="text-slate-200">Dia {ccSettings?.closingDay || 5}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 mr-2">Vencimento:</span>
+                            <strong className="text-slate-200">Dia {ccSettings?.dueDay || 15}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 mr-2">Limite Total:</span>
+                            <strong className="text-slate-100">R$ {ccSettings?.limit.toLocaleString()}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Configurações de Ciclo de Faturamento */}
+                      <div className="md:col-span-5 bg-white rounded-3xl p-5 border border-slate-200 flex flex-col justify-between">
+                        <div>
+                          <h3 className="font-extrabold text-slate-900 text-sm mb-3 flex items-center gap-2">
+                            <Icon name="settings" className="w-4 h-4 text-indigo-600" />
+                            Ajustes do Cartão
+                          </h3>
+                          <form onSubmit={handleSaveCcSettings} className="space-y-3">
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Limite Total (R$)</label>
+                              <input 
+                                type="number" 
+                                value={ccSettingsForm.limit}
+                                onChange={e => setCcSettingsForm(prev => ({ ...prev, limit: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
+                                required
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Dia de Fecho</label>
+                                <input 
+                                  type="number" 
+                                  min="1" 
+                                  max="31"
+                                  value={ccSettingsForm.closingDay}
+                                  onChange={e => setCcSettingsForm(prev => ({ ...prev, closingDay: e.target.value }))}
+                                  className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Dia de Vencimento</label>
+                                <input 
+                                  type="number" 
+                                  min="1" 
+                                  max="31"
+                                  value={ccSettingsForm.dueDay}
+                                  onChange={e => setCcSettingsForm(prev => ({ ...prev, dueDay: e.target.value }))}
+                                  className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
+                                  required
+                                />
+                              </div>
+                            </div>
+                            <button type="submit" className="w-full bg-slate-950 text-white font-bold py-2 rounded-xl text-xs hover:bg-slate-800 transition">
+                              Salvar Parametros
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Registar Compra a Crédito e Faturas Grouped */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                      
+                      {/* Form de Nova Compra a Crédito */}
+                      <div className="md:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 h-fit">
+                        <h3 className="font-extrabold text-slate-900 text-sm mb-3">Lançar Compra a Crédito</h3>
+                        <form onSubmit={handleAddCcTransaction} className="space-y-3">
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Descrição do Item</label>
+                            <input 
+                              type="text" 
+                              placeholder="Ex: Telemóvel, Restaurante"
+                              value={newCcTx.desc}
+                              onChange={e => setNewCcTx(prev => ({ ...prev, desc: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              required
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Valor (R$)</label>
+                              <input 
+                                type="number" 
+                                step="0.01"
+                                placeholder="0.00"
+                                value={newCcTx.amount}
+                                onChange={e => setNewCcTx(prev => ({ ...prev, amount: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data da Compra</label>
+                              <input 
+                                type="date"
+                                value={newCcTx.date}
+                                onChange={e => setNewCcTx(prev => ({ ...prev, date: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Categoria</label>
+                            <select 
+                              value={newCcTx.category}
+                              onChange={e => setNewCcTx(prev => ({ ...prev, category: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none"
+                            >
+                              {CATEGORIES.despesa.map(c => (
+                                <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <button 
+                            type="submit"
+                            className="w-full mt-2 bg-indigo-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-indigo-800 transition"
+                          >
+                            Autorizar Crédito
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Visão de Faturas Detalhada por Período */}
+                      <div className="md:col-span-8 space-y-4">
+                        <h3 className="font-extrabold text-slate-900 text-base">Faturas por Ciclo Mensal</h3>
+                        
+                        {Object.keys(groupedInvoices).length === 0 ? (
+                          <div className="bg-white rounded-3xl p-12 text-center text-slate-400 border border-slate-100">
+                            <Icon name="creditCard" className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                            <p className="text-xs">Não existem registos de compras a crédito associadas a esta conta.</p>
+                          </div>
+                        ) : (
+                          Object.keys(groupedInvoices).sort((a,b) => b.localeCompare(a)).map(key => {
+                            const invoice = groupedInvoices[key];
+                            const isCurrent = (key === activeInvoiceKey);
+
+                            return (
+                              <div key={key} className="bg-white rounded-3xl p-5 border border-slate-200 space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-black text-slate-900 text-sm">{invoice.label}</h4>
+                                      {isCurrent && (
+                                        <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                                          Ciclo Aberto (Atual)
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">
+                                      Referência de Fatura: <span className="font-mono">{invoice.key}</span>
+                                    </p>
+                                  </div>
+
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-right">
+                                      <p className="text-[9px] text-slate-400 uppercase font-bold">Subtotal</p>
+                                      <p className="font-black text-slate-900 text-sm">
+                                        R$ {invoice.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      </p>
+                                    </div>
+
+                                    {invoice.isPaid ? (
+                                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1">
+                                        <Icon name="check" className="w-3.5 h-3.5" /> Pago
+                                      </span>
+                                    ) : (
+                                      <button 
+                                        onClick={() => setPaymentModal({ isOpen: true, invoiceKey: invoice.key, label: invoice.label, total: invoice.total })}
+                                        className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold px-3 py-2 rounded-xl transition shadow"
+                                      >
+                                        Pagar Fatura
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Listagem de movimentos desta fatura */}
+                                <div className="divide-y divide-slate-50">
+                                  {invoice.transactions.map(t => {
+                                    const catObj = CATEGORIES.despesa.find(c => c.id === t.category) || { name: 'Outros', icon: '🛒' };
+                                    return (
+                                      <div key={t.id} className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50/40 rounded-lg px-1 transition">
+                                        <div>
+                                          <p className="font-semibold text-slate-800">{t.desc}</p>
+                                          <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                            <span>{catObj.icon} {catObj.name}</span>
+                                            <span>•</span>
+                                            <span>{new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</span>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-bold text-slate-700">
+                                            R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                          </span>
+                                          {!t.paid && (
+                                            <button 
+                                              onClick={() => handleDeleteCcTransaction(t.id)}
+                                              className="text-slate-300 hover:text-rose-600 p-1"
+                                            >
+                                              <Icon name="trash" className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+
+                      </div>
+
+                    </div>
+
+                  </div>
+                )}
+
+                {/* 4. SEPARADOR: LIMITES DE ORÇAMENTO */}
                 {activeTab === 'budgets' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     <div className="md:col-span-4 bg-white rounded-2xl p-5 border border-slate-200">
@@ -1247,7 +1906,7 @@
                   </div>
                 )}
 
-                {/* 4. SEPARADOR: METAS DE POUPANÇA */}
+                {/* 5. SEPARADOR: METAS DE POUPANÇA */}
                 {activeTab === 'goals' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     <div className="md:col-span-4 flex flex-col gap-6">
@@ -1369,7 +2028,7 @@
                   </div>
                 )}
 
-                {/* 5. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
+                {/* 6. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
                 {activeTab === 'simulator' && (
                   <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-6">
                     <div>
