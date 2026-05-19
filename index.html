@@ -582,7 +582,7 @@
         const updated = accounts.map(a => a.id === updatedAcc.id ? updatedAcc : a);
         setAccounts(updated);
         saveToLocalStorage(null, null, null, null, null, updated);
-        triggerNotification('Conta updated localmente!');
+        triggerNotification('Conta atualizada localmente!');
       };
 
       // Remover Conta Bancária
@@ -918,7 +918,7 @@
         });
       };
 
-      // MODIFICADO: Executar adiantamento SEM alterar as compras originais. Lançamos um Crédito no Cartão.
+      // Executar adiantamento SEM alterar as compras originais. Lançamos um Crédito no Cartão.
       const handleConfirmPrepayment = async () => {
         const totalUnpaid = totalUnpaidCcAmount;
         let paymentAmount = 0;
@@ -1327,34 +1327,90 @@
         triggerNotification('Limite de despesa atualizado localmente!');
       };
 
-      // Gerar Dados de Demonstração
+      // MODIFICADO/CORRIGIDO: Gerar Dados de Demonstração (Append, vincula ao C6 Bank/Ativo e usa a data do filtro reativamente)
       const handleGenerateMockData = async () => {
-        const targetAccId = accounts[0]?.id || 'default-acc';
+        // 1. Procurar conta ativa para vincular os lançamentos reais.
+        let targetAccId = accounts[0]?.id;
+        
+        // Se por acaso não existir conta, cria uma primária
+        if (!targetAccId) {
+          const defaultAcc = { 
+            name: 'Conta Principal', 
+            type: 'corrente', 
+            initialBalance: 1200, 
+            overdraftLimit: 1000, 
+            color: 'bg-blue-600', 
+            createdAt: new Date().toISOString() 
+          };
+          if (dbStatus === 'synced' && user) {
+            try {
+              const accountsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'accounts');
+              const docRef = await addDoc(accountsCollectionRef, defaultAcc);
+              targetAccId = docRef.id;
+            } catch (err) {
+              console.error(err);
+            }
+          }
+          if (!targetAccId) {
+            const localAcc = { id: 'default-acc-' + Date.now(), ...defaultAcc };
+            const updatedAccs = [...accounts, localAcc];
+            setAccounts(updatedAccs);
+            saveToLocalStorage(null, null, null, null, null, updatedAccs);
+            targetAccId = localAcc.id;
+          }
+        }
+
+        // 2. Determinar o mês reativo para gerar os lançamentos (usa o filtro ativo do utilizador)
+        const baseYearMonth = selectedMonth === 'all' ? '2026-05' : selectedMonth;
+
+        // 3. Criar lote de lançamentos de caixa coerentes para o período
         const mockTxs = [
-          { desc: 'Vencimento / Salário', amount: 5500, type: 'receita', category: 'salario', date: '2026-05-01', dueDate: '2026-05-01', status: 'liquidado', accountId: targetAccId },
-          { desc: 'Renda da Habitação', amount: 1600, type: 'despesa', category: 'moradia', date: '2026-05-02', dueDate: '2026-05-10', status: 'liquidado', accountId: targetAccId },
-          { desc: 'Supermercado e Alimentação', amount: 850, type: 'despesa', category: 'alimentacao', date: '2026-05-03', dueDate: '2026-05-03', status: 'liquidado', accountId: targetAccId },
-          { desc: 'Projeto Freelance Front-End', amount: 1200, type: 'receita', category: 'freelance', date: '2026-05-10', dueDate: '2026-05-15', status: 'liquidado', accountId: targetAccId },
-          { desc: 'Fatura de Luz Agendada', amount: 140, type: 'despesa', category: 'moradia', date: '2026-06-05', dueDate: '2026-06-12', status: 'pendente', accountId: targetAccId }
+          { desc: 'Vencimento / Salário', amount: 5500, type: 'receita', category: 'salario', date: `${baseYearMonth}-01`, dueDate: `${baseYearMonth}-01`, status: 'liquidado', accountId: targetAccId },
+          { desc: 'Renda de Habitação', amount: 1600, type: 'despesa', category: 'moradia', date: `${baseYearMonth}-05`, dueDate: `${baseYearMonth}-05`, status: 'liquidado', accountId: targetAccId },
+          { desc: 'Supermercado Mensal', amount: 850, type: 'despesa', category: 'alimentacao', date: `${baseYearMonth}-08`, dueDate: `${baseYearMonth}-08`, status: 'liquidado', accountId: targetAccId },
+          { desc: 'Prémio Extra Projeto', amount: 650, type: 'receita', category: 'freelance', date: `${baseYearMonth}-12`, dueDate: `${baseYearMonth}-12`, status: 'liquidado', accountId: targetAccId },
+          { desc: 'Fatura de Eletricidade', amount: 120, type: 'despesa', category: 'moradia', date: `${baseYearMonth}-15`, dueDate: `${baseYearMonth}-15`, status: 'liquidado', accountId: targetAccId },
+          { desc: 'Subscrição Entretenimento', amount: 45, type: 'despesa', category: 'lazer', date: `${baseYearMonth}-20`, dueDate: `${baseYearMonth}-20`, status: 'liquidado', accountId: targetAccId },
+          { desc: 'Consulta Médica Agendada', amount: 150, type: 'despesa', category: 'saude', date: `${baseYearMonth}-22`, dueDate: `${baseYearMonth}-28`, status: 'pendente', accountId: targetAccId }
+        ];
+
+        // 4. Criar compras demonstrativas para preencher o Cartão de Crédito também!
+        const mockCcTxs = [
+          { desc: 'Combustível Repsol', amount: 75.00, category: 'transporte', date: `${baseYearMonth}-04`, paid: false, isCredit: false, createdAt: new Date().toISOString() },
+          { desc: 'Jantar Restaurante', amount: 120.00, category: 'alimentacao', date: `${baseYearMonth}-10`, paid: false, isCredit: false, createdAt: new Date().toISOString() }
         ];
 
         if (dbStatus === 'synced' && user) {
           try {
+            // Sincronizar Caixa
             const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
             for (const m of mockTxs) {
               await addDoc(txCollectionRef, { ...m, createdAt: new Date().toISOString() });
             }
-            triggerNotification('Dados de teste guardados na nuvem!');
+            // Sincronizar Crédito
+            const ccTxCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions');
+            for (const c of mockCcTxs) {
+              await addDoc(ccTxCollectionRef, c);
+            }
+            triggerNotification('Dados demonstrativos sincronizados na nuvem!');
             return;
           } catch (err) {
-            console.error("Erro ao guardar dados demonstrativos na nuvem:", err);
+            console.error("Erro na nuvem:", err);
           }
         }
 
-        const localMockTxs = mockTxs.map((m, idx) => ({ id: `mock-${idx}`, ...m, createdAt: new Date().toISOString() }));
-        setTransactions(localMockTxs);
-        saveToLocalStorage(localMockTxs, null, null, null, null, null);
-        triggerNotification('Dados demonstrativos carregados localmente!');
+        // Salvar localmente preservando os dados já existentes (APPEND!)
+        const localMockTxs = mockTxs.map((m, idx) => ({ id: `mock-tx-${Date.now()}-${idx}`, ...m, createdAt: new Date().toISOString() }));
+        const localMockCcTxs = mockCcTxs.map((c, idx) => ({ id: `mock-cc-${Date.now()}-${idx}`, ...c }));
+
+        const nextTxs = [...localMockTxs, ...transactions];
+        const nextCcTxs = [...localMockCcTxs, ...ccTransactions];
+
+        setTransactions(nextTxs);
+        setCcTransactions(nextCcTxs);
+
+        saveToLocalStorage(nextTxs, null, null, null, nextCcTxs, null);
+        triggerNotification(`Dados demonstrativos carregados para o período ${baseYearMonth}!`);
       };
 
       // Componente utilitário para renderizar o estado de liquidação de forma visual
@@ -1437,8 +1493,7 @@
         return ccTransactions.filter(t => t.date && t.date.startsWith(selectedMonth));
       }, [ccTransactions, selectedMonth]);
 
-      // Para fins bancários reais e visualização de Cheque Especial, o saldo corrente de cada conta
-      // deve acumular TODAS as transações anteriores (histórico real), e não apenas as do mês filtrado no menu.
+      // Acumula todas as transações anteriores para definir o saldo líquido real de cada conta
       const accountsWithBalances = useMemo(() => {
         return accounts.map(acc => {
           let currentVal = parseFloat(acc.initialBalance) || 0;
@@ -1456,6 +1511,7 @@
             }
           });
 
+          // Fallback robusto para Cheque Especial
           const overdraftLimit = acc.overdraftLimit !== undefined && acc.overdraftLimit !== null 
             ? parseFloat(acc.overdraftLimit) 
             : 1000;
@@ -1464,7 +1520,7 @@
         });
       }, [accounts, transactions]);
 
-      // Estatísticas gerais considerando os estados pendente e liquidado do período selecionado
+      // Estatísticas gerais do período selecionado
       const stats = useMemo(() => {
         const totalBalance = accountsWithBalances.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
@@ -1571,7 +1627,7 @@
         return `${yr}-${String(m + 1).padStart(2, '0')}`;
       }, [ccSettings, selectedMonth]);
 
-      // Dívida total não paga e Limite disponível do Cartão (deduzindo os créditos de adiantamento)
+      // Dívida total não paga e Limite disponível do Cartão
       const totalUnpaidCcAmount = useMemo(() => {
         return ccTransactions
           .filter(tx => !tx.paid)
@@ -1724,7 +1780,7 @@
       return (
         <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
           
-          {/* Modal de Adiantamento de Pagamento (Amortização Fatura) */}
+          {/* Modal de Adiantamento de Pagamento */}
           {prepaymentModal.isOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all">
@@ -1797,7 +1853,7 @@
                       className="w-full text-xs font-bold rounded-xl border border-slate-200 px-3 py-3 bg-white focus:outline-none cursor-pointer text-slate-700"
                     >
                       {accountsWithBalances.map(acc => {
-                        const totalPower = acc.currentBalance + (parseFloat(acc.overdraftLimit) || 0);
+                        const totalPower = acc.currentBalance + (acc.overdraftLimit || 0);
                         return (
                           <option key={acc.id} value={acc.id}>
                             {acc.name} (Saldo: R$ {acc.currentBalance.toFixed(2)} | Limite Total Disp: R$ {totalPower.toFixed(2)})
@@ -1954,7 +2010,7 @@
                   <h3 className="text-lg font-black text-slate-900">Limite de Crédito Insuficiente</h3>
                 </div>
                 
-                <div className="text-sm text-slate-600 space-y-4 mb-6">
+                <div className="text-sm text-slate-650 space-y-4 mb-6">
                   <p>A compra que está a tentar realizar no valor de <strong className="text-slate-900">R$ {autoLimitModal.requested.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> ultrapassa o seu limite de crédito disponível atual de <strong className="text-slate-900">R$ {availableCcLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>.</p>
                   
                   <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-100 space-y-2 text-xs">
@@ -1971,8 +2027,6 @@
                       <span>R$ {autoLimitModal.required.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
-                  
-                  <p className="text-xs text-slate-500">Deseja que a aplicação ajuste automaticamente o limite do seu cartão para <strong>R$ {autoLimitModal.required.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> para concluir esta compra agora mesmo?</p>
                 </div>
 
                 <div className="flex gap-2 justify-end">
@@ -2002,7 +2056,7 @@
                   <h3 className="text-lg font-black text-slate-900">Confirmar Liquidação</h3>
                 </div>
                 
-                <div className="text-sm text-slate-650 space-y-4 mb-6">
+                <div className="text-sm text-slate-600 space-y-4 mb-6">
                   <p>Está prestes a liquidar a fatura do cartão referente a <strong className="text-slate-900">{paymentModal.label}</strong>.</p>
                   
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 space-y-3">
@@ -2019,7 +2073,7 @@
                         className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 bg-white font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
                       >
                         {accountsWithBalances.map(acc => {
-                          const totalPower = acc.currentBalance + (parseFloat(acc.overdraftLimit) || 0);
+                          const totalPower = acc.currentBalance + (acc.overdraftLimit || 0);
                           return (
                             <option key={acc.id} value={acc.id}>
                               {acc.name} (Saldo: R$ {acc.currentBalance.toFixed(2)} | Limite: R$ {totalPower.toFixed(2)})
@@ -2142,7 +2196,7 @@
                       className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none"
                     >
                       {accountsWithBalances.map(acc => {
-                        const totalPower = acc.currentBalance + (parseFloat(acc.overdraftLimit) || 0);
+                        const totalPower = acc.currentBalance + (acc.overdraftLimit || 0);
                         return (
                           <option key={acc.id} value={acc.id}>
                             {acc.name} (Saldo: R$ {acc.currentBalance.toFixed(2)} | Limite: R$ {totalPower.toFixed(2)})
@@ -2154,7 +2208,7 @@
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[10px] uppercase font-bold text-slate-405 mb-1">Tipo</label>
+                      <label className="block text-[10px] uppercase font-bold text-slate-450 mb-1">Tipo</label>
                       <select 
                         value={editModal.transaction.type}
                         onChange={e => {
@@ -2304,7 +2358,7 @@
           <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-md">
             <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="bg-emerald-500 p-2 rounded-xl text-slate-900 shadow-lg">
+                <div className="bg-emerald-505 bg-emerald-500 p-2 rounded-xl text-slate-900 shadow-lg">
                   <Icon name="trendingUp" className="w-6 h-6" />
                 </div>
                 <div>
@@ -2579,7 +2633,7 @@
                             <p className="text-xs">Não existem despesas liquidadas com vencimento neste período.</p>
                             <button 
                               onClick={handleGenerateMockData}
-                              className="text-xs bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-slate-800"
+                              className="text-xs bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-slate-800 transition transform active:scale-95"
                             >
                               Carregar Base Demonstrativa
                             </button>
@@ -2761,10 +2815,10 @@
                             <select 
                               value={newTx.accountId || (accounts[0]?.id || 'default-acc')}
                               onChange={e => setNewTx(prev => ({ ...prev, accountId: e.target.value }))}
-                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-755 font-semibold"
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-700 font-semibold"
                             >
                               {accountsWithBalances.map(acc => {
-                                const totalPower = acc.currentBalance + (parseFloat(acc.overdraftLimit) || 0);
+                                const totalPower = acc.currentBalance + (acc.overdraftLimit || 0);
                                 return (
                                   <option key={acc.id} value={acc.id}>
                                     {acc.name} (Saldo: R$ {acc.currentBalance.toFixed(2)} | Limite: R$ {totalPower.toFixed(2)})
@@ -2788,7 +2842,7 @@
                                   }));
                                   setIsInstallment(false);
                                 }}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-705"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-700"
                               >
                                 <option value="despesa">🔴 Despesa</option>
                                 <option value="receita">🟢 Receita</option>
@@ -2826,7 +2880,7 @@
                       <div className="md:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                         <div className="flex justify-between items-center mb-4">
                           <h3 className="font-extrabold text-slate-900 text-base">Lançamentos Registados</h3>
-                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-650 font-bold hover:underline">
+                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-600 font-bold hover:underline">
                             Ver Extrato Completo
                           </button>
                         </div>
@@ -2864,7 +2918,7 @@
                                     <td className="py-3">
                                       {renderStatusBadge(t.status)}
                                     </td>
-                                    <td className="py-3 text-slate-650 text-[11px] leading-tight">
+                                    <td className="py-3 text-slate-600 text-[11px] leading-tight">
                                       <div className="font-extrabold text-slate-800">
                                         📅 {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
                                       </div>
@@ -2877,7 +2931,7 @@
                                         {isPending && (
                                           <button 
                                             onClick={() => handleClearTransaction(t.id)} 
-                                            className="text-emerald-500 hover:text-emerald-705 p-1 hover:bg-emerald-50 rounded"
+                                            className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded"
                                             title="Liquidar Lançamento"
                                           >
                                             <Icon name="check" className="w-4 h-4" />
@@ -2890,7 +2944,7 @@
                                         >
                                           <Icon name="edit" className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-650 p-1">
+                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600 p-1">
                                           <Icon name="trash" className="w-4 h-4" />
                                         </button>
                                       </div>
@@ -2922,7 +2976,7 @@
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                       <div>
                         <h2 className="text-lg font-black text-slate-900">Extrato Consolidado</h2>
-                        <p className="text-xs text-slate-405">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
+                        <p className="text-xs text-slate-400">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
                       </div>
 
                       <div className="flex flex-wrap gap-2">
@@ -2980,7 +3034,7 @@
                             return (
                               <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/10' : ''}`}>
                                 <td className="py-4">
-                                  <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-905'}`}>{t.desc}</div>
+                                  <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-900'}`}>{t.desc}</div>
                                   <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
                                     <span className={`inline-block w-2 h-2 rounded-full ${linkedAcc.color}`}></span>
                                     <span>{linkedAcc.name}</span>
@@ -3137,7 +3191,7 @@
                                   <span className={`inline-block w-3.5 h-3.5 rounded-full ${acc.color} shadow-sm`}></span>
                                   <div>
                                     <h4 className="font-black text-slate-900 text-sm">{acc.name}</h4>
-                                    <span className="text-[10px] text-slate-405 font-bold uppercase">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase">
                                       {acc.type === 'corrente' ? '💳 Conta Corrente' : acc.type === 'poupança' ? '📈 Poupança' : '💵 Dinheiro'}
                                     </span>
                                   </div>
@@ -3172,7 +3226,7 @@
                               </div>
 
                               <div className="border-t border-slate-200/40 pt-2.5 space-y-1.5">
-                                <div className="flex justify-between text-[10px] text-slate-505 font-bold">
+                                <div className="flex justify-between text-[10px] text-slate-500 font-bold">
                                   <span>Limite Cheque Especial:</span>
                                   <span className="text-slate-700">R$ {overdraftLimit.toFixed(2)}</span>
                                 </div>
@@ -3199,7 +3253,7 @@
                   </div>
                 )}
 
-                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO (OTIMIZADO COM REGISTO DE CRÉDITO VISÍVEL) */}
+                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO */}
                 {activeTab === 'credit-card' && (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
@@ -3412,7 +3466,7 @@
                             {isCcInstallment && (
                               <div className="space-y-2 pt-1">
                                 <div className="flex items-center gap-3">
-                                  <span className="text-xs text-slate-505 shrink-0">Parcelas:</span>
+                                  <span className="text-xs text-slate-500 shrink-0">Parcelas:</span>
                                   <select 
                                     value={ccInstallmentsCount}
                                     onChange={e => setCcInstallmentsCount(parseInt(e.target.value))}
@@ -3444,7 +3498,7 @@
                         </form>
                       </div>
 
-                      {/* Exibição Completa de Faturas com Crédito Lançado */}
+                      {/* Exibição de Faturas */}
                       <div className="md:col-span-8 space-y-4">
                         <div className="flex items-center justify-between">
                           <h3 className="font-extrabold text-slate-900 text-base">Faturas por Ciclo Mensal</h3>
@@ -3482,7 +3536,7 @@
                                       </div>
                                       
                                       {invoice.isPaid ? (
-                                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
+                                        <span className="bg-emerald-55 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
                                           ✓ Paga
                                         </span>
                                       ) : (
@@ -3513,7 +3567,7 @@
                                                 {isCreditItem ? '💰' : catObj.icon}
                                               </span>
                                               <div>
-                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-800 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
+                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-805 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
                                                   {item.desc}
                                                 </p>
                                                 <p className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
@@ -3527,7 +3581,7 @@
                                             {/* Preço e Estado */}
                                             <div className="flex items-center gap-3">
                                               <div className="text-right">
-                                                <p className={`font-bold font-mono ${isCreditItem ? 'text-emerald-600' : item.paid ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                                                <p className={`font-bold font-mono ${isCreditItem ? 'text-emerald-600 font-bold' : item.paid ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
                                                   {isCreditItem ? '-' : ''} R$ {Math.abs(parseFloat(item.amount)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 </p>
                                                 {isCreditItem ? (
@@ -3650,7 +3704,7 @@
                                 <span className="font-bold text-slate-800 flex items-center gap-1.5">
                                   <span>{cat.icon}</span> <span>{cat.name}</span>
                                 </span>
-                                <span className="font-semibold text-slate-505">
+                                <span className="font-semibold text-slate-500">
                                   {limit > 0 ? (
                                     <>Gasto: <strong className="text-slate-800 font-mono">R$ {spent.toFixed(2)}</strong> / Limite: R$ {limit.toFixed(2)}</>
                                   ) : (
@@ -3661,7 +3715,7 @@
                               
                               {limit > 0 && (
                                 <div className="space-y-1">
-                                  <div className="w-full bg-slate-250 rounded-full h-2.5 overflow-hidden">
+                                  <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
                                     <div 
                                       className={`h-full rounded-full transition-all duration-300 ${percent > 100 ? 'bg-rose-500' : percent > 80 ? 'bg-amber-500' : 'bg-indigo-600'}`}
                                       style={{ width: `${Math.min(100, percent)}%` }}
@@ -3777,7 +3831,7 @@
                                 required
                               />
                             </div>
-                            <button type="submit" className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm">
+                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm">
                               Depositar na Meta
                             </button>
                           </form>
@@ -3811,12 +3865,12 @@
                               </div>
 
                               <div className="space-y-1 pt-1">
-                                <div className="flex justify-between text-[10px] font-bold text-slate-505">
+                                <div className="flex justify-between text-[10px] font-bold text-slate-500">
                                   <span>Guardado: <strong className="text-slate-900">R$ {currentVal.toFixed(2)}</strong></span>
                                   <span>Meta: R$ {targetVal.toFixed(2)}</span>
                                 </div>
                                 <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                                  <div className="h-full bg-emerald-550 bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${percent}%` }}></div>
+                                  <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${percent}%` }}></div>
                                 </div>
                                 <div className="text-right text-[9px] font-extrabold text-emerald-600">{percent.toFixed(0)}% Concluído</div>
                               </div>
@@ -3851,7 +3905,7 @@
                           type="number" 
                           value={simInitial}
                           onChange={e => setSimInitial(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-850"
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
                         />
                       </div>
                       <div className="space-y-1">
@@ -3860,7 +3914,7 @@
                           type="number" 
                           value={simMonthly}
                           onChange={e => setSimMonthly(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-850"
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
                         />
                       </div>
                       <div className="space-y-1">
@@ -3870,7 +3924,7 @@
                           step="0.1"
                           value={simRate}
                           onChange={e => setSimRate(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-850"
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
                         />
                       </div>
                       <div className="space-y-1">
@@ -3879,7 +3933,7 @@
                           type="number" 
                           value={simYears}
                           onChange={e => setSimYears(parseInt(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-850"
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
                         />
                       </div>
                     </div>
@@ -3887,14 +3941,14 @@
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-5">
                       <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                         <p className="text-[10px] text-slate-400 font-bold uppercase">Total Acumulado Bruto</p>
-                        <p className="text-xl font-black text-slate-905">R$ {investmentSimulation.finalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-xl font-black text-slate-900">R$ {investmentSimulation.finalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                       </div>
                       <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                         <p className="text-[10px] text-slate-400 font-bold uppercase">Total Próprio Investido</p>
                         <p className="text-xl font-black text-slate-700">R$ {investmentSimulation.totalInvested.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                       </div>
-                      <div className="p-4 bg-emerald-550 bg-emerald-50 border border-emerald-100 rounded-2xl">
-                        <p className="text-[10px] text-emerald-805 font-bold uppercase">Total Ganho em Juros</p>
+                      <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                        <p className="text-[10px] text-emerald-800 font-bold uppercase">Total Ganho em Juros</p>
                         <p className="text-xl font-black text-emerald-700">R$ {investmentSimulation.totalGains.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                       </div>
                     </div>
@@ -3914,7 +3968,7 @@
                             <tr key={row.year} className="hover:bg-slate-50/50">
                               <td className="py-2.5 font-bold text-slate-700">{row.year} {row.year === 1 ? 'Ano' : 'Anos'}</td>
                               <td className="py-2.5 text-slate-600">R$ {row.invested.toLocaleString()}</td>
-                              <td className="py-2.5 text-emerald-650 font-medium">+ R$ {row.gains.toLocaleString()}</td>
+                              <td className="py-2.5 text-emerald-655 text-emerald-600 font-medium">+ R$ {row.gains.toLocaleString()}</td>
                               <td className="py-2.5 text-right font-extrabold text-slate-900">R$ {row.total.toLocaleString()}</td>
                             </tr>
                           ))}
