@@ -185,12 +185,13 @@
       const [notification, setNotification] = useState(null);
       const [paymentModal, setPaymentModal] = useState({ isOpen: false, invoiceKey: null, label: '', total: 0, accountId: '' });
       
-      // Estado para Modal de Adiantamento de Fatura do Cartão
+      // Estado para Modal de Adiantamento de Fatura do Cartão (Com suporte a seleção de Fatura Destino)
       const [prepaymentModal, setPrepaymentModal] = useState({
         isOpen: false,
         amountType: 'total', // 'total' | 'custom'
         customAmount: '',
-        accountId: ''
+        accountId: '',
+        targetInvoiceKey: '' // Nova propriedade reativa de destino do crédito
       });
 
       // Modais de Edição de Transação / Contas
@@ -753,7 +754,7 @@
         const updated = transactions.map(t => t.id === updatedTx.id ? updatedTx : t);
         setTransactions(updated);
         saveToLocalStorage(updated, null, null, null, null, null);
-        triggerNotification('Lançamento updated localmente!');
+        triggerNotification('Lançamento atualizado localmente!');
       };
 
       // Liquidar / Efetivar um lançamento pendente
@@ -914,11 +915,12 @@
           isOpen: true,
           amountType: 'total',
           customAmount: '',
-          accountId: accounts[0]?.id || 'default-acc'
+          accountId: accounts[0]?.id || 'default-acc',
+          targetInvoiceKey: activeInvoiceKey // Inicializa mirando a fatura atualmente visualizada
         });
       };
 
-      // Executar adiantamento SEM alterar as compras originais. Lançamos um Crédito no Cartão.
+      // MODIFICADO: Executar adiantamento deixando EXCLUSIVAMENTE como crédito na fatura sem alterar o estado de nenhuma compra
       const handleConfirmPrepayment = async () => {
         const totalUnpaid = totalUnpaidCcAmount;
         let paymentAmount = 0;
@@ -950,6 +952,11 @@
           return;
         }
 
+        // Determina a fatura correspondente de destino do adiantamento
+        const targetInvoice = prepaymentModal.targetInvoiceKey || activeInvoiceKey;
+        // Ajustamos o dia do lançamento para o dia 1 do ciclo correspondente para que caia perfeitamente na fatura alvo
+        const targetCreditDate = `${targetInvoice}-01`;
+
         // 1. Criar transação de débito/despesa na conta bancária selecionada
         const prepaymentTx = {
           desc: `Adiantamento de Fatura do Cartão`,
@@ -963,12 +970,12 @@
           createdAt: new Date().toISOString()
         };
 
-        // 2. Criar um lançamento de CRÉDITO (valor negativo) na lista do cartão
+        // 2. Criar um lançamento de CRÉDITO (valor negativo) na lista do cartão (não abate compras individuais)
         const creditCardItem = {
           desc: `Crédito de Adiantamento`,
-          amount: -paymentAmount, // Armazena como negativo
+          amount: -paymentAmount, // Armazena como valor negativo para somar-se credoramente à fatura correspondente
           category: 'outros_desp',
-          date: new Date().toISOString().split('T')[0],
+          date: targetCreditDate, // Vinculado reativamente à fatura correspondente selecionada!
           paid: false,
           isCredit: true,
           createdAt: new Date().toISOString()
@@ -985,7 +992,7 @@
             const ccTxCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions');
             await addDoc(ccTxCollectionRef, creditCardItem);
 
-            triggerNotification(`Adiantamento de R$ ${paymentAmount.toFixed(2)} efetuado com sucesso!`);
+            triggerNotification(`Adiantamento de R$ ${paymentAmount.toFixed(2)} efetuado com sucesso na fatura de ${targetInvoice}!`);
           } catch (err) {
             console.error("Erro no adiantamento, aplicando local:", err);
             processPrepaymentLocally(prepaymentTx, creditCardItem);
@@ -994,7 +1001,7 @@
           processPrepaymentLocally(prepaymentTx, creditCardItem);
         }
 
-        setPrepaymentModal({ isOpen: false, amountType: 'total', customAmount: '', accountId: '' });
+        setPrepaymentModal({ isOpen: false, amountType: 'total', customAmount: '', accountId: '', targetInvoiceKey: '' });
       };
 
       const processPrepaymentLocally = (prepaymentTx, creditCardItem) => {
@@ -1007,7 +1014,7 @@
         
         setCcTransactions(finalCcTxs);
         saveToLocalStorage(updatedTxs, null, null, null, finalCcTxs, null);
-        triggerNotification(`Adiantamento de R$ ${prepaymentTx.amount.toFixed(2)} processado localmente!`);
+        triggerNotification(`Adiantamento de R$ ${prepaymentTx.amount.toFixed(2)} processado localmente na fatura de destino!`);
       };
 
       // Controladores de Edição de Transações de Crédito
@@ -1309,7 +1316,7 @@
           try {
             const budgetsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', 'limits');
             await setDoc(budgetsDocRef, updatedBudgets);
-            triggerNotification('Limite de despesa atualizado no Firebase!');
+            triggerNotification('Limite de despesa updated no Firebase!');
           } catch (err) {
             console.error(err);
             saveBudgetLocally(updatedBudgets);
@@ -1704,7 +1711,7 @@
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900">Adiantar Pagamento</h3>
-                    <p className="text-xs text-slate-400">Inserir crédito de amortização na fatura do mês</p>
+                    <p className="text-xs text-slate-400">Lança um crédito de adiantamento na fatura correspondente</p>
                   </div>
                 </div>
 
@@ -1758,13 +1765,29 @@
                     </div>
                   )}
 
+                  {/* NOVO: Seleção da Fatura Correspondente de Destino */}
+                  <div className="space-y-1">
+                    <label className="block text-[10px] uppercase font-bold text-slate-400">Fatura Correspondente (Destino do Crédito)</label>
+                    <select 
+                      value={prepaymentModal.targetInvoiceKey}
+                      onChange={e => setPrepaymentModal(prev => ({ ...prev, targetInvoiceKey: e.target.value }))}
+                      className="w-full text-xs font-bold rounded-xl border border-slate-200 px-3 py-3 bg-white focus:outline-none cursor-pointer text-slate-750 text-slate-700"
+                    >
+                      {availableMonths.map(m => (
+                        <option key={m.value} value={m.value}>
+                          Fatura de {m.label} {m.value === activeInvoiceKey ? '(Atual)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   {/* Seleção de Conta de Origem */}
                   <div className="space-y-1">
                     <label className="block text-[10px] uppercase font-bold text-slate-400">Conta Bancária de Origem</label>
                     <select 
                       value={prepaymentModal.accountId}
                       onChange={e => setPrepaymentModal(prev => ({ ...prev, accountId: e.target.value }))}
-                      className="w-full text-xs font-bold rounded-xl border border-slate-200 px-3 py-3 bg-white focus:outline-none cursor-pointer text-slate-700"
+                      className="w-full text-xs font-bold rounded-xl border border-slate-200 px-3 py-3 bg-white focus:outline-none cursor-pointer text-slate-705 text-slate-700"
                     >
                       {accountsWithBalances.map(acc => {
                         const totalPower = acc.currentBalance + (acc.overdraftLimit || 0);
@@ -1781,11 +1804,11 @@
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 space-y-2 text-xs">
                     <p className="font-bold text-slate-700 mb-1">Impacto Reativo no Cartão:</p>
                     <div className="flex justify-between text-slate-500">
-                      <span>Crédito de Adiantamento:</span>
+                      <span>Lançar Crédito Independente:</span>
                       <strong className="text-emerald-600 font-mono">- R$ {prepaymentLivePreview.paymentAmount.toFixed(2)}</strong>
                     </div>
                     <div className="flex justify-between text-slate-500">
-                      <span>Fatura Remante no Cartão:</span>
+                      <span>Dívida Restante no Cartão:</span>
                       <strong className="text-slate-700 font-mono">R$ {prepaymentLivePreview.nextUnpaid.toFixed(2)}</strong>
                     </div>
                     <div className="flex justify-between border-t border-slate-200/80 pt-2 font-semibold text-slate-800">
@@ -2272,7 +2295,7 @@
           <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-md">
             <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="bg-emerald-505 bg-emerald-500 p-2 rounded-xl text-slate-900 shadow-lg">
+                <div className="bg-emerald-500 p-2 rounded-xl text-slate-900 shadow-lg">
                   <Icon name="trendingUp" className="w-6 h-6" />
                 </div>
                 <div>
@@ -2639,7 +2662,7 @@
                               <select 
                                 value={newTx.status}
                                 onChange={e => setNewTx(prev => ({ ...prev, status: e.target.value }))}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none font-semibold text-slate-705 text-slate-700"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none font-semibold text-slate-700"
                               >
                                 <option value="liquidado">🟢 Pago / Recebido</option>
                                 <option value="pendente">⏳ Pendente</option>
@@ -2723,7 +2746,7 @@
                             <select 
                               value={newTx.accountId || (accounts[0]?.id || 'default-acc')}
                               onChange={e => setNewTx(prev => ({ ...prev, accountId: e.target.value }))}
-                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-705 text-slate-700 font-semibold"
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-700 font-semibold"
                             >
                               {accountsWithBalances.map(acc => {
                                 const totalPower = acc.currentBalance + (acc.overdraftLimit || 0);
@@ -2750,7 +2773,7 @@
                                   }));
                                   setIsInstallment(false);
                                 }}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-705 text-slate-700"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-700"
                               >
                                 <option value="despesa">🔴 Despesa</option>
                                 <option value="receita">🟢 Receita</option>
@@ -2788,7 +2811,7 @@
                       <div className="md:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                         <div className="flex justify-between items-center mb-4">
                           <h3 className="font-extrabold text-slate-900 text-base">Lançamentos Registados</h3>
-                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-555 text-emerald-600 font-bold hover:underline">
+                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-600 font-bold hover:underline">
                             Ver Extrato Completo
                           </button>
                         </div>
@@ -2839,7 +2862,7 @@
                                         {isPending && (
                                           <button 
                                             onClick={() => handleClearTransaction(t.id)} 
-                                            className="text-emerald-500 hover:text-emerald-705 p-1 hover:bg-emerald-50 rounded"
+                                            className="text-emerald-555 text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded"
                                             title="Liquidar Lançamento"
                                           >
                                             <Icon name="check" className="w-4 h-4" />
@@ -2852,7 +2875,7 @@
                                         >
                                           <Icon name="edit" className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-655 p-1">
+                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600 p-1">
                                           <Icon name="trash" className="w-4 h-4" />
                                         </button>
                                       </div>
@@ -2884,7 +2907,7 @@
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                       <div>
                         <h2 className="text-lg font-black text-slate-900">Extrato Consolidado</h2>
-                        <p className="text-xs text-slate-405">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
+                        <p className="text-xs text-slate-400">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
                       </div>
 
                       <div className="flex flex-wrap gap-2">
@@ -2942,7 +2965,7 @@
                             return (
                               <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/10' : ''}`}>
                                 <td className="py-4">
-                                  <div className={`font-semibold ${isPending ? 'text-slate-505 text-slate-500 italic' : 'text-slate-905 text-slate-900'}`}>{t.desc}</div>
+                                  <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-900'}`}>{t.desc}</div>
                                   <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
                                     <span className={`inline-block w-2 h-2 rounded-full ${linkedAcc.color}`}></span>
                                     <span>{linkedAcc.name}</span>
@@ -2978,7 +3001,7 @@
                                     )}
                                     <button 
                                       onClick={() => openEditModal(t)} 
-                                      className="text-slate-405 text-slate-400 hover:text-indigo-650 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                                      className="text-slate-400 hover:text-indigo-650 p-1.5 hover:bg-slate-100 rounded-lg transition"
                                       title="Editar Lançamento"
                                     >
                                       <Icon name="edit" className="w-4 h-4" />
@@ -3239,7 +3262,7 @@
                             disabled={totalUnpaidCcAmount <= 0}
                             className={`w-full sm:w-auto text-white text-[11px] font-bold px-4 py-3 rounded-xl transition shadow flex items-center justify-center gap-1.5 ${
                               totalUnpaidCcAmount <= 0 
-                                ? 'bg-slate-300 cursor-not-allowed text-slate-505 text-slate-500' 
+                                ? 'bg-slate-300 cursor-not-allowed text-slate-500' 
                                 : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow-lg'
                             }`}
                           >
@@ -3303,7 +3326,7 @@
                                 />
                               </div>
                             </div>
-                            <button type="submit" className="w-full bg-slate-955 bg-slate-900 text-white font-bold py-2 rounded-xl text-xs hover:bg-slate-800 transition shadow">
+                            <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs hover:bg-slate-800 transition shadow">
                               Guardar Ajustes
                             </button>
                           </form>
@@ -3367,7 +3390,7 @@
                                 onChange={e => setIsCcInstallment(e.target.checked)}
                                 className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded"
                               />
-                              <label htmlFor="isCcInstallmentCheckbox" className="text-xs font-bold text-slate-705 text-slate-700 cursor-pointer">
+                              <label htmlFor="isCcInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer">
                                 Compra Parcelada / Prestações
                               </label>
                             </div>
@@ -3455,7 +3478,7 @@
                                     </div>
                                   </div>
 
-                                  {/* Compras e Crédito associados à fatura */}
+                                  {/* Compras e Créditos associados à fatura */}
                                   <div className="space-y-2">
                                     <h5 className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mb-2">
                                       Lançamentos da Fatura:
@@ -3475,11 +3498,11 @@
                                                 {isCreditItem ? '💰' : catObj.icon}
                                               </span>
                                               <div>
-                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-805 text-emerald-800 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
+                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-800 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
                                                   {item.desc}
                                                 </p>
                                                 <p className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
-                                                  <span>{isCreditItem ? 'Crédito Adiantado' : catObj.name}</span>
+                                                  <span>{isCreditItem ? 'Crédito de Adiantamento' : catObj.name}</span>
                                                   <span>•</span>
                                                   <span>{new Date(item.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</span>
                                                 </p>
@@ -3489,15 +3512,16 @@
                                             {/* Preço e Estado */}
                                             <div className="flex items-center gap-3">
                                               <div className="text-right">
+                                                {/* Exibição formatada em verde e sinal de menos para créditos */}
                                                 <p className={`font-bold font-mono ${isCreditItem ? 'text-emerald-600 font-bold' : item.paid ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-                                                  {isCreditItem ? '-' : ''} R$ {Math.abs(parseFloat(item.amount)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                  {isCreditItem ? '- ' : ''}R$ {Math.abs(parseFloat(item.amount)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 </p>
                                                 {isCreditItem ? (
                                                   <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
-                                                    Crédito Lançado
+                                                    Crédito Ativo
                                                   </span>
                                                 ) : item.paid ? (
-                                                  <span className="bg-slate-100 text-slate-505 text-slate-500 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
+                                                  <span className="bg-slate-100 text-slate-500 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
                                                     Pago
                                                   </span>
                                                 ) : (
@@ -3511,7 +3535,7 @@
                                               <div className="flex items-center gap-1 border-l border-slate-200/80 pl-2">
                                                 <button 
                                                   onClick={() => openEditCcModal(item)}
-                                                  className="text-slate-300 hover:text-indigo-650 transition p-1 hover:bg-white rounded-lg"
+                                                  className="text-slate-300 hover:text-indigo-655 transition p-1 hover:bg-white rounded-lg"
                                                   title="Editar"
                                                 >
                                                   <Icon name="edit" className="w-3.5 h-3.5" />
@@ -3699,208 +3723,3 @@
                             <input 
                               type="date"
                               value={newGoal.deadline}
-                              onChange={e => setNewGoal(prev => ({ ...prev, deadline: e.target.value }))}
-                              className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
-                            />
-                          </div>
-
-                          <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs">Adicionar Meta</button>
-                        </form>
-                      </div>
-
-                      {/* Depositar em Meta */}
-                      {goals.length > 0 && (
-                        <div className="bg-white rounded-2xl p-5 border border-slate-200">
-                          <h3 className="font-extrabold text-slate-900 text-base mb-4">Aporte Financeiro</h3>
-                          <form onSubmit={handleGoalDeposit} className="space-y-3">
-                            <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Escolher Meta</label>
-                              <select 
-                                value={goalDeposit.goalId}
-                                onChange={e => setGoalDeposit(prev => ({ ...prev, goalId: e.target.value }))}
-                                className="w-full text-xs rounded-xl border border-slate-200 py-2.5 bg-white text-slate-700 font-semibold"
-                                required
-                              >
-                                <option value="">Escolha...</option>
-                                {goals.map(g => (
-                                  <option key={g.id} value={g.id}>{g.name}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Valor do Depósito (R$)</label>
-                              <input 
-                                type="number" 
-                                step="0.01"
-                                placeholder="0.00"
-                                value={goalDeposit.amount}
-                                onChange={e => setGoalDeposit(prev => ({ ...prev, amount: e.target.value }))}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold"
-                                required
-                              />
-                            </div>
-                            <button type="submit" className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm">
-                              Depositar na Meta
-                            </button>
-                          </form>
-                        </div>
-                      )}
-
-                    </div>
-
-                    <div className="md:col-span-8 bg-white rounded-3xl p-6 border border-slate-200 space-y-4 h-fit">
-                      <div>
-                        <h2 className="font-extrabold text-slate-900 text-lg">Acompanhamento das Suas Metas</h2>
-                        <p className="text-xs text-slate-400">Poupe com consistência para realizar os seus maiores planos.</p>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {goals.map(g => {
-                          const targetVal = parseFloat(g.target) || 1;
-                          const currentVal = parseFloat(g.current) || 0;
-                          const percent = Math.min(100, (currentVal / targetVal) * 100);
-
-                          return (
-                            <div key={g.id} className="p-5 border border-slate-100 bg-slate-50/50 rounded-2xl flex flex-col justify-between space-y-3 hover:shadow transition">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <h4 className="font-black text-slate-900 text-sm">{g.name}</h4>
-                                  <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Prazo: {new Date(g.deadline).toLocaleDateString()}</p>
-                                </div>
-                                <button onClick={() => handleDeleteGoal(g.id)} className="text-slate-300 hover:text-rose-600 p-1">
-                                  <Icon name="trash" className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-
-                              <div className="space-y-1 pt-1">
-                                <div className="flex justify-between text-[10px] font-bold text-slate-500">
-                                  <span>Guardado: <strong className="text-slate-900">R$ {currentVal.toFixed(2)}</strong></span>
-                                  <span>Meta: R$ {targetVal.toFixed(2)}</span>
-                                </div>
-                                <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                                  <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${percent}%` }}></div>
-                                </div>
-                                <div className="text-right text-[9px] font-extrabold text-emerald-600">{percent.toFixed(0)}% Concluído</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {goals.length === 0 && (
-                          <div className="sm:col-span-2 py-12 text-center text-slate-400 italic">
-                            <Icon name="piggyBank" className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                            <span>Não possui metas de poupança no momento.</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                  </div>
-                )}
-
-                {/* 7. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
-                {activeTab === 'simulator' && (
-                  <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-6">
-                    <div>
-                      <h2 className="font-extrabold text-slate-900 text-lg">Simulador de Juros Compostos</h2>
-                      <p className="text-xs text-slate-400">Projete os seus investimentos e compare o efeito multiplicador dos juros no tempo.</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div className="space-y-1">
-                        <label className="block text-[10px] uppercase font-bold text-slate-400">Montante Inicial (R$)</label>
-                        <input 
-                          type="number" 
-                          value={simInitial}
-                          onChange={e => setSimInitial(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="block text-[10px] uppercase font-bold text-slate-400">Aporte Mensal (R$)</label>
-                        <input 
-                          type="number" 
-                          value={simMonthly}
-                          onChange={e => setSimMonthly(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="block text-[10px] uppercase font-bold text-slate-400">Taxa de Juro Anual (%)</label>
-                        <input 
-                          type="number" 
-                          step="0.1"
-                          value={simRate}
-                          onChange={e => setSimRate(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="block text-[10px] uppercase font-bold text-slate-400">Tempo de Análise (Anos)</label>
-                        <input 
-                          type="number" 
-                          value={simYears}
-                          onChange={e => setSimYears(parseInt(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-5">
-                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">Total Acumulado Bruto</p>
-                        <p className="text-xl font-black text-slate-900">R$ {investmentSimulation.finalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
-                      </div>
-                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">Total Próprio Investido</p>
-                        <p className="text-xl font-black text-slate-700">R$ {investmentSimulation.totalInvested.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
-                      </div>
-                      <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
-                        <p className="text-[10px] text-emerald-800 font-bold uppercase">Total Ganho em Juros</p>
-                        <p className="text-xl font-black text-emerald-700">R$ {investmentSimulation.totalGains.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto pt-2">
-                      <table className="w-full text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-150 text-slate-400 font-bold">
-                            <th className="pb-2">Tempo decorrido</th>
-                            <th className="pb-2">Montante Próprio</th>
-                            <th className="pb-2">Lucro Bruto (Juros)</th>
-                            <th className="pb-2 text-right">Montante Total</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {investmentSimulation.timeline.map(row => (
-                            <tr key={row.year} className="hover:bg-slate-50/50">
-                              <td className="py-2.5 font-bold text-slate-700">{row.year} {row.year === 1 ? 'Ano' : 'Anos'}</td>
-                              <td className="py-2.5 text-slate-600">R$ {row.invested.toLocaleString()}</td>
-                              <td className="py-2.5 text-emerald-600 font-medium">+ R$ {row.gains.toLocaleString()}</td>
-                              <td className="py-2.5 text-right font-extrabold text-slate-900">R$ {row.total.toLocaleString()}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-              </main>
-            </div>
-          </div>
-
-          <footer className="bg-white border-t py-6 text-center text-[10px] text-slate-400">
-            Desenvolvido para gestão pessoal segura com isolamento de dados no Google Firebase Firestore.
-          </footer>
-
-        </div>
-      );
-    }
-
-    // Inicialização da Aplicação no DOM Virtual do React 18
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
-</body>
-</html>
