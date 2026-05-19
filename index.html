@@ -48,7 +48,7 @@
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     // ---------------------------------------------------------
-    // CONFIGURAÇÃO DO SEU PROJETO FIREBASE (CONECTADA)
+    // CONFIGURAÇÃO DO PROJETO FIREBASE (CONECTADO)
     // ---------------------------------------------------------
     const firebaseConfig = {
       apiKey: "AIzaSyCT_lmCQQEvSTfng4pITg7DJ5O-X0gWyXc",
@@ -60,12 +60,10 @@
       measurementId: "G-84SYMRQ7F6"
     };
 
-    // Inicialização das instâncias do ecossistema Google Cloud
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // ID de isolamento da App para cumprimento da Regra 1
     const appId = 'gestfinanceira-a8a7b';
 
     // Categorias padrão traduzidas para PT-PT
@@ -101,7 +99,7 @@
       limit: 3000,
       closingDay: 5,
       dueDay: 15,
-      cardName: "Crédito Visa Platinum" // Nome padrão personalizável
+      cardName: "Crédito Visa Platinum"
     };
 
     // ---------------------------------------------------------
@@ -186,8 +184,14 @@
       const [editModal, setEditModal] = useState({ isOpen: false, transaction: null });
       const [editCcModal, setEditCcModal] = useState({ isOpen: false, transaction: null });
 
+      // Configuração para suporte a Lançamentos Parcelados
+      const [isInstallment, setIsInstallment] = useState(false);
+      const [installmentsCount, setInstallmentsCount] = useState(3);
+
+      const [isCcInstallment, setIsCcInstallment] = useState(false);
+      const [ccInstallmentsCount, setCcInstallmentsCount] = useState(3);
+
       // Formulários e Estados Interativos
-      // Adicionado dueDate com data de hoje padrão
       const [newTx, setNewTx] = useState({ 
         desc: '', 
         amount: '', 
@@ -541,47 +545,73 @@
         setNewTx(prev => ({
           ...prev,
           date: dateVal,
-          dueDate: dateVal, // Sincroniza o vencimento por defeito
+          dueDate: dateVal,
           status: isFuture ? 'pendente' : 'liquidado'
         }));
       };
 
-      // Adicionar Transação de Caixa
+      // Adicionar Transação de Caixa (com opção de fracionamento / parcelamento)
       const handleAddTransaction = async (e) => {
         e.preventDefault();
-        if (!newTx.desc.trim() || !newTx.amount || parseFloat(newTx.amount) <= 0) {
+        const totalAmount = parseFloat(newTx.amount);
+        if (!newTx.desc.trim() || isNaN(totalAmount) || totalAmount <= 0) {
           triggerNotification('Preencha os campos com valores válidos.', 'error');
           return;
         }
 
         const selectedAccId = newTx.accountId || accounts[0]?.id || 'default-acc';
+        const numInstallments = isInstallment ? installmentsCount : 1;
 
-        // Gravando também o campo dueDate para controlo inteligente de prazos
-        const txData = {
-          desc: newTx.desc.trim(),
-          amount: parseFloat(newTx.amount),
-          type: newTx.type,
-          category: newTx.category,
-          date: newTx.date || new Date().toISOString().split('T')[0],
-          dueDate: newTx.dueDate || newTx.date || new Date().toISOString().split('T')[0],
-          accountId: selectedAccId,
-          status: newTx.status || 'liquidado',
-          createdAt: new Date().toISOString()
-        };
+        // Distribuição do valor pelas prestações
+        const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 100) / 100;
+        const remainder = Math.round((totalAmount - (baseInstallmentAmount * numInstallments)) * 100) / 100;
+
+        const generatedTxs = [];
+
+        for (let i = 1; i <= numInstallments; i++) {
+          const installmentVal = (i === numInstallments) ? (baseInstallmentAmount + remainder) : baseInstallmentAmount;
+          
+          // Calcular a data de registo da prestação (uma por mês)
+          const targetDateObj = new Date(newTx.date + 'T00:00:00');
+          targetDateObj.setMonth(targetDateObj.getMonth() + (i - 1));
+          const dateStr = targetDateObj.toISOString().split('T')[0];
+
+          // Calcular a data de vencimento da prestação (uma por mês)
+          const targetDueDateObj = new Date(newTx.dueDate + 'T00:00:00');
+          targetDueDateObj.setMonth(targetDueDateObj.getMonth() + (i - 1));
+          const dueDateStr = targetDueDateObj.toISOString().split('T')[0];
+
+          const txData = {
+            desc: numInstallments > 1 ? `${newTx.desc.trim()} (${i}/${numInstallments})` : newTx.desc.trim(),
+            amount: installmentVal,
+            type: newTx.type,
+            category: newTx.category,
+            date: dateStr,
+            dueDate: dueDateStr,
+            accountId: selectedAccId,
+            status: i === 1 ? newTx.status : 'pendente', // Primeira de acordo com escolha, as restantes automáticas como pendente
+            createdAt: new Date().toISOString()
+          };
+
+          generatedTxs.push(txData);
+        }
 
         if (dbStatus === 'synced' && user) {
           try {
             const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
-            await addDoc(txCollectionRef, txData);
-            triggerNotification('Transação registada na nuvem!');
+            for (const item of generatedTxs) {
+              await addDoc(txCollectionRef, item);
+            }
+            triggerNotification(numInstallments > 1 ? `${numInstallments} Prestações sincronizadas com a nuvem!` : 'Transação registada na nuvem!');
           } catch (err) {
             console.error("Erro ao guardar na nuvem, a aplicar localmente:", err);
-            saveTxLocally(txData);
+            saveMultipleTxsLocally(generatedTxs);
           }
         } else {
-          saveTxLocally(txData);
+          saveMultipleTxsLocally(generatedTxs);
         }
 
+        // Limpar form
         setNewTx({ 
           desc: '', 
           amount: '', 
@@ -592,14 +622,15 @@
           accountId: '',
           status: 'liquidado'
         });
+        setIsInstallment(false);
       };
 
-      const saveTxLocally = (txData) => {
-        const localItem = { id: Date.now().toString(), ...txData };
-        const updated = [localItem, ...transactions];
+      const saveMultipleTxsLocally = (txsArray) => {
+        const localItems = txsArray.map((item, idx) => ({ id: (Date.now() + idx).toString(), ...item }));
+        const updated = [...localItems, ...transactions];
         setTransactions(updated);
         saveToLocalStorage(updated, null, null, null, null, null);
-        triggerNotification('Guardado localmente (Modo Offline)!');
+        triggerNotification('Lançamentos gravados localmente (Modo Offline)!');
       };
 
       // Controladores de Edição de Transações de Caixa
@@ -608,7 +639,7 @@
           isOpen: true,
           transaction: { 
             ...tx,
-            dueDate: tx.dueDate || tx.date // Garante retrocompatibilidade imediata na UI de edição
+            dueDate: tx.dueDate || tx.date
           }
         });
       };
@@ -693,51 +724,71 @@
         triggerNotification('Transação apagada localmente!', 'warning');
       };
 
-      // Adicionar Transação de Cartão de Crédito (Compra)
+      // Adicionar Transação de Cartão de Crédito (Compra - com suporte opcional a parcelas)
       const handleAddCcTransaction = async (e) => {
         e.preventDefault();
-        const amt = parseFloat(newCcTx.amount);
-        if (!newCcTx.desc.trim() || isNaN(amt) || amt <= 0) {
+        const totalAmount = parseFloat(newCcTx.amount);
+        if (!newCcTx.desc.trim() || isNaN(totalAmount) || totalAmount <= 0) {
           triggerNotification('Preencha os campos com valores válidos.', 'error');
           return;
         }
 
-        if (amt > availableCcLimit) {
+        if (totalAmount > availableCcLimit) {
           triggerNotification('Transação Recusada: Limite de Crédito Insuficiente!', 'error');
           return;
         }
 
-        const ccTxData = {
-          desc: newCcTx.desc.trim(),
-          amount: amt,
-          category: newCcTx.category,
-          date: newCcTx.date || new Date().toISOString().split('T')[0],
-          paid: false,
-          createdAt: new Date().toISOString()
-        };
+        const numInstallments = isCcInstallment ? ccInstallmentsCount : 1;
+        const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 100) / 100;
+        const remainder = Math.round((totalAmount - (baseInstallmentAmount * numInstallments)) * 100) / 100;
+
+        const generatedCcTxs = [];
+
+        for (let i = 1; i <= numInstallments; i++) {
+          const installmentVal = (i === numInstallments) ? (baseInstallmentAmount + remainder) : baseInstallmentAmount;
+          
+          // Data de compra avançando mensalmente para cair nas faturas corretas
+          const targetDateObj = new Date(newCcTx.date + 'T00:00:00');
+          targetDateObj.setMonth(targetDateObj.getMonth() + (i - 1));
+          const dateStr = targetDateObj.toISOString().split('T')[0];
+
+          const ccTxData = {
+            desc: numInstallments > 1 ? `${newCcTx.desc.trim()} (${i}/${numInstallments})` : newCcTx.desc.trim(),
+            amount: installmentVal,
+            category: newCcTx.category,
+            date: dateStr,
+            paid: false,
+            createdAt: new Date().toISOString()
+          };
+
+          generatedCcTxs.push(ccTxData);
+        }
 
         if (dbStatus === 'synced' && user) {
           try {
             const ccTxCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions');
-            await addDoc(ccTxCollectionRef, ccTxData);
-            triggerNotification('Compra a crédito registada com sucesso!');
+            for (const item of generatedCcTxs) {
+              await addDoc(ccTxCollectionRef, item);
+            }
+            triggerNotification('Prestações do Cartão registadas com sucesso!');
           } catch (err) {
             console.error("Erro ao registar na nuvem, a aplicar localmente:", err);
-            saveCcTxLocally(ccTxData);
+            saveMultipleCcTxsLocally(generatedCcTxs);
           }
         } else {
-          saveCcTxLocally(ccTxData);
+          saveMultipleCcTxsLocally(generatedCcTxs);
         }
 
         setNewCcTx({ desc: '', amount: '', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
+        setIsCcInstallment(false);
       };
 
-      const saveCcTxLocally = (ccTxData) => {
-        const localItem = { id: Date.now().toString(), ...ccTxData };
-        const updated = [localItem, ...ccTransactions];
+      const saveMultipleCcTxsLocally = (ccTxsArray) => {
+        const localItems = ccTxsArray.map((item, idx) => ({ id: (Date.now() + idx).toString(), ...item }));
+        const updated = [...localItems, ...ccTransactions];
         setCcTransactions(updated);
         saveToLocalStorage(null, null, null, null, updated, null);
-        triggerNotification('Compra a crédito guardada localmente!');
+        triggerNotification('Prestações guardadas localmente!');
       };
 
       // Controladores de Edição de Transações de Crédito
@@ -805,7 +856,7 @@
         triggerNotification('Registo apagado localmente!', 'warning');
       };
 
-      // Guardar Configurações de Cartão de Crédito (Ajustado com o cardName)
+      // Guardar Configurações de Cartão de Crédito
       const handleSaveCcSettings = async (e) => {
         e.preventDefault();
         const lim = parseFloat(ccSettingsForm.limit);
@@ -1408,7 +1459,6 @@
                         required
                       />
                     </div>
-                    {/* Campos de data ajustados para incluir Vencimento na edição */}
                     <div>
                       <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Registo</label>
                       <input 
@@ -1946,7 +1996,7 @@
 
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Montante (R$)</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Montante Total (R$)</label>
                               <input 
                                 type="number" 
                                 step="0.01"
@@ -1964,16 +2014,62 @@
                                 onChange={e => setNewTx(prev => ({ ...prev, status: e.target.value }))}
                                 className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none font-semibold text-slate-700"
                               >
-                                <option value="liquidado">🟢 Liquidado</option>
+                                <option value="liquidado">🟢 Pago / Recebido</option>
                                 <option value="pendente">⏳ Pendente</option>
                               </select>
                             </div>
                           </div>
 
+                          {/* FUNCIONALIDADE: LANÇAR DESPESA PARCELADA */}
+                          {newTx.type === 'despesa' && (
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <input 
+                                  type="checkbox" 
+                                  id="isInstallmentCheckbox"
+                                  checked={isInstallment}
+                                  onChange={e => setIsInstallment(e.target.checked)}
+                                  className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 rounded"
+                                />
+                                <label htmlFor="isInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer">
+                                  Dividir em Prestações (Parcelar)
+                                </label>
+                              </div>
+
+                              {isInstallment && (
+                                <div className="space-y-2 pt-1">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-xs text-slate-500 shrink-0">Número de parcelas:</span>
+                                    <select 
+                                      value={installmentsCount}
+                                      onChange={e => setInstallmentsCount(parseInt(e.target.value))}
+                                      className="flex-1 text-xs rounded-lg border border-slate-200 p-1.5 focus:outline-none font-bold text-slate-800"
+                                    >
+                                      {[2,3,4,5,6,10,12,18,24,36].map(num => (
+                                        <option key={num} value={num}>{num}x</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  
+                                  {parseFloat(newTx.amount) > 0 && (
+                                    <div className="text-[10px] bg-white p-2.5 rounded-lg border border-slate-100 text-slate-500 leading-normal">
+                                      <p className="font-semibold text-slate-800">Plano de Prestações:</p>
+                                      <ul className="list-disc list-inside space-y-0.5 mt-1">
+                                        <li>Serão gerados {installmentsCount} lançamentos sequenciais.</li>
+                                        <li>Valor aproximado: <strong className="text-emerald-700">R$ {(parseFloat(newTx.amount) / installmentsCount).toFixed(2)} / mês</strong>.</li>
+                                        <li className="italic">O 1º lançamento assume o estado escolhido; os restantes entram como 'Pendente'.</li>
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {/* Campos de data unificados de Registo e Vencimento */}
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Registo</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Registo / Início</label>
                               <input 
                                 type="date"
                                 value={newTx.date}
@@ -1982,7 +2078,7 @@
                               />
                             </div>
                             <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Vencimento</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Vencimento 1ª Prest.</label>
                               <input 
                                 type="date"
                                 value={newTx.dueDate}
@@ -2020,6 +2116,7 @@
                                     type: nt,
                                     category: nt === 'receita' ? CATEGORIES.receita[0].id : CATEGORIES.despesa[0].id
                                   }));
+                                  setIsInstallment(false); // Reseta parcelamento se mudar para receita
                                 }}
                                 className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none"
                               >
@@ -2043,9 +2140,9 @@
 
                           <button 
                             type="submit"
-                            className="w-full mt-2 bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-800 transition"
+                            className="w-full mt-2 bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-800 transition shadow"
                           >
-                            Confirmar Lançamento
+                            {isInstallment ? `Confirmar ${installmentsCount} Prestações` : 'Confirmar Lançamento'}
                           </button>
                         </form>
                       </div>
@@ -2077,7 +2174,6 @@
                                 const catObj = catList.find(c => c.id === t.category) || { name: 'Geral', icon: '💸' };
                                 const linkedAcc = accountsWithBalances.find(a => a.id === t.accountId) || { name: 'Conta Principal', color: 'bg-blue-600' };
                                 const isPending = t.status === 'pendente';
-                                const hasDiffDue = t.dueDate && t.dueDate !== t.date;
 
                                 return (
                                   <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/20' : ''}`}>
@@ -2093,7 +2189,6 @@
                                     <td className="py-3">
                                       {renderStatusBadge(t.status)}
                                     </td>
-                                    {/* Exibição Inteligente de Registo e Vencimento */}
                                     <td className="py-3 text-slate-500 text-[11px] leading-tight">
                                       <div>Reg: {new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</div>
                                       {t.dueDate ? (
@@ -2228,7 +2323,6 @@
                                 <td className="py-4">
                                   {renderStatusBadge(t.status)}
                                 </td>
-                                {/* Datas de Registo e Vencimento Inteligentes */}
                                 <td className="py-4 text-slate-500 text-[11px] leading-tight">
                                   <div>Reg: {new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</div>
                                   {t.dueDate ? (
@@ -2272,7 +2366,7 @@
                   </div>
                 )}
 
-                {/* 3. NOVO SEPARADOR COMPLETO: GESTÃO DE CONTAS CORRENTES */}
+                {/* 3. SEPARADOR: GESTÃO DE CONTAS CORRENTES */}
                 {activeTab === 'accounts' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     
@@ -2409,7 +2503,6 @@
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Cartão FinançasPro</p>
-                            {/* Nome do cartão personalizado de forma dinâmica */}
                             <h3 className="text-lg font-black tracking-tight mt-1 text-slate-100">
                               {ccSettings?.cardName || 'Crédito Visa Platinum'}
                             </h3>
@@ -2459,7 +2552,6 @@
                             Ajustes do Cartão
                           </h3>
                           <form onSubmit={handleSaveCcSettings} className="space-y-3">
-                            {/* Opção para Editar o Nome do Cartão de Crédito adicionada */}
                             <div>
                               <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Nome do Cartão</label>
                               <input 
@@ -2538,7 +2630,7 @@
 
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Valor (R$)</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Valor Total (R$)</label>
                               <input 
                                 type="number" 
                                 step="0.01"
@@ -2560,6 +2652,44 @@
                             </div>
                           </div>
 
+                          {/* FUNCIONALIDADE EXTRA: PARCELAMENTO DE CARTÃO DE CRÉDITO */}
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="checkbox" 
+                                id="isCcInstallmentCheckbox"
+                                checked={isCcInstallment}
+                                onChange={e => setIsCcInstallment(e.target.checked)}
+                                className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded"
+                              />
+                              <label htmlFor="isCcInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer">
+                                Compra Parcelada / Prestações
+                              </label>
+                            </div>
+
+                            {isCcInstallment && (
+                              <div className="space-y-2 pt-1">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs text-slate-500 shrink-0">Parcelas:</span>
+                                  <select 
+                                    value={ccInstallmentsCount}
+                                    onChange={e => setCcInstallmentsCount(parseInt(e.target.value))}
+                                    className="flex-1 text-xs rounded-lg border border-slate-200 p-1.5 focus:outline-none font-bold text-slate-800"
+                                  >
+                                    {[2,3,4,5,6,10,12,18,24,36].map(num => (
+                                      <option key={num} value={num}>{num}x</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                {parseFloat(newCcTx.amount) > 0 && (
+                                  <p className="text-[10px] text-slate-500">
+                                    Irá criar {ccInstallmentsCount} lançamentos de <strong className="text-slate-700">R$ {(parseFloat(newCcTx.amount) / ccInstallmentsCount).toFixed(2)} / mês</strong> nas faturas seguintes.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
                           <div>
                             <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Categoria</label>
                             <select 
@@ -2577,7 +2707,7 @@
                             type="submit"
                             className="w-full mt-2 bg-indigo-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-indigo-800 transition"
                           >
-                            Autorizar Crédito
+                            {isCcInstallment ? `Autorizar Crédito (${ccInstallmentsCount}x)` : 'Autorizar Crédito'}
                           </button>
                         </form>
                       </div>
