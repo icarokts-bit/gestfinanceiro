@@ -753,7 +753,7 @@
         const updated = transactions.map(t => t.id === updatedTx.id ? updatedTx : t);
         setTransactions(updated);
         saveToLocalStorage(updated, null, null, null, null, null);
-        triggerNotification('Lançamento atualizado localmente!');
+        triggerNotification('Lançamento updated localmente!');
       };
 
       // Liquidar / Efetivar um lançamento pendente
@@ -1327,92 +1327,6 @@
         triggerNotification('Limite de despesa atualizado localmente!');
       };
 
-      // MODIFICADO/CORRIGIDO: Gerar Dados de Demonstração (Append, vincula ao C6 Bank/Ativo e usa a data do filtro reativamente)
-      const handleGenerateMockData = async () => {
-        // 1. Procurar conta ativa para vincular os lançamentos reais.
-        let targetAccId = accounts[0]?.id;
-        
-        // Se por acaso não existir conta, cria uma primária
-        if (!targetAccId) {
-          const defaultAcc = { 
-            name: 'Conta Principal', 
-            type: 'corrente', 
-            initialBalance: 1200, 
-            overdraftLimit: 1000, 
-            color: 'bg-blue-600', 
-            createdAt: new Date().toISOString() 
-          };
-          if (dbStatus === 'synced' && user) {
-            try {
-              const accountsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'accounts');
-              const docRef = await addDoc(accountsCollectionRef, defaultAcc);
-              targetAccId = docRef.id;
-            } catch (err) {
-              console.error(err);
-            }
-          }
-          if (!targetAccId) {
-            const localAcc = { id: 'default-acc-' + Date.now(), ...defaultAcc };
-            const updatedAccs = [...accounts, localAcc];
-            setAccounts(updatedAccs);
-            saveToLocalStorage(null, null, null, null, null, updatedAccs);
-            targetAccId = localAcc.id;
-          }
-        }
-
-        // 2. Determinar o mês reativo para gerar os lançamentos (usa o filtro ativo do utilizador)
-        const baseYearMonth = selectedMonth === 'all' ? '2026-05' : selectedMonth;
-
-        // 3. Criar lote de lançamentos de caixa coerentes para o período
-        const mockTxs = [
-          { desc: 'Vencimento / Salário', amount: 5500, type: 'receita', category: 'salario', date: `${baseYearMonth}-01`, dueDate: `${baseYearMonth}-01`, status: 'liquidado', accountId: targetAccId },
-          { desc: 'Renda de Habitação', amount: 1600, type: 'despesa', category: 'moradia', date: `${baseYearMonth}-05`, dueDate: `${baseYearMonth}-05`, status: 'liquidado', accountId: targetAccId },
-          { desc: 'Supermercado Mensal', amount: 850, type: 'despesa', category: 'alimentacao', date: `${baseYearMonth}-08`, dueDate: `${baseYearMonth}-08`, status: 'liquidado', accountId: targetAccId },
-          { desc: 'Prémio Extra Projeto', amount: 650, type: 'receita', category: 'freelance', date: `${baseYearMonth}-12`, dueDate: `${baseYearMonth}-12`, status: 'liquidado', accountId: targetAccId },
-          { desc: 'Fatura de Eletricidade', amount: 120, type: 'despesa', category: 'moradia', date: `${baseYearMonth}-15`, dueDate: `${baseYearMonth}-15`, status: 'liquidado', accountId: targetAccId },
-          { desc: 'Subscrição Entretenimento', amount: 45, type: 'despesa', category: 'lazer', date: `${baseYearMonth}-20`, dueDate: `${baseYearMonth}-20`, status: 'liquidado', accountId: targetAccId },
-          { desc: 'Consulta Médica Agendada', amount: 150, type: 'despesa', category: 'saude', date: `${baseYearMonth}-22`, dueDate: `${baseYearMonth}-28`, status: 'pendente', accountId: targetAccId }
-        ];
-
-        // 4. Criar compras demonstrativas para preencher o Cartão de Crédito também!
-        const mockCcTxs = [
-          { desc: 'Combustível Repsol', amount: 75.00, category: 'transporte', date: `${baseYearMonth}-04`, paid: false, isCredit: false, createdAt: new Date().toISOString() },
-          { desc: 'Jantar Restaurante', amount: 120.00, category: 'alimentacao', date: `${baseYearMonth}-10`, paid: false, isCredit: false, createdAt: new Date().toISOString() }
-        ];
-
-        if (dbStatus === 'synced' && user) {
-          try {
-            // Sincronizar Caixa
-            const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
-            for (const m of mockTxs) {
-              await addDoc(txCollectionRef, { ...m, createdAt: new Date().toISOString() });
-            }
-            // Sincronizar Crédito
-            const ccTxCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions');
-            for (const c of mockCcTxs) {
-              await addDoc(ccTxCollectionRef, c);
-            }
-            triggerNotification('Dados demonstrativos sincronizados na nuvem!');
-            return;
-          } catch (err) {
-            console.error("Erro na nuvem:", err);
-          }
-        }
-
-        // Salvar localmente preservando os dados já existentes (APPEND!)
-        const localMockTxs = mockTxs.map((m, idx) => ({ id: `mock-tx-${Date.now()}-${idx}`, ...m, createdAt: new Date().toISOString() }));
-        const localMockCcTxs = mockCcTxs.map((c, idx) => ({ id: `mock-cc-${Date.now()}-${idx}`, ...c }));
-
-        const nextTxs = [...localMockTxs, ...transactions];
-        const nextCcTxs = [...localMockCcTxs, ...ccTransactions];
-
-        setTransactions(nextTxs);
-        setCcTransactions(nextCcTxs);
-
-        saveToLocalStorage(nextTxs, null, null, null, nextCcTxs, null);
-        triggerNotification(`Dados demonstrativos carregados para o período ${baseYearMonth}!`);
-      };
-
       // Componente utilitário para renderizar o estado de liquidação de forma visual
       const renderStatusBadge = (status) => {
         if (status === 'pendente') {
@@ -1871,7 +1785,7 @@
                       <strong className="text-emerald-600 font-mono">- R$ {prepaymentLivePreview.paymentAmount.toFixed(2)}</strong>
                     </div>
                     <div className="flex justify-between text-slate-500">
-                      <span>Fatura Restante no Cartão:</span>
+                      <span>Fatura Remante no Cartão:</span>
                       <strong className="text-slate-700 font-mono">R$ {prepaymentLivePreview.nextUnpaid.toFixed(2)}</strong>
                     </div>
                     <div className="flex justify-between border-t border-slate-200/80 pt-2 font-semibold text-slate-800">
@@ -2208,7 +2122,7 @@
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[10px] uppercase font-bold text-slate-450 mb-1">Tipo</label>
+                      <label className="block text-[10px] uppercase font-bold text-slate-405 mb-1">Tipo</label>
                       <select 
                         value={editModal.transaction.type}
                         onChange={e => {
@@ -2631,12 +2545,6 @@
                         {stats.expense === 0 ? (
                           <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center space-y-3">
                             <p className="text-xs">Não existem despesas liquidadas com vencimento neste período.</p>
-                            <button 
-                              onClick={handleGenerateMockData}
-                              className="text-xs bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-slate-800 transition transform active:scale-95"
-                            >
-                              Carregar Base Demonstrativa
-                            </button>
                           </div>
                         ) : (
                           <div className="space-y-3">
@@ -2731,7 +2639,7 @@
                               <select 
                                 value={newTx.status}
                                 onChange={e => setNewTx(prev => ({ ...prev, status: e.target.value }))}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none font-semibold text-slate-700"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none font-semibold text-slate-705 text-slate-700"
                               >
                                 <option value="liquidado">🟢 Pago / Recebido</option>
                                 <option value="pendente">⏳ Pendente</option>
@@ -2815,7 +2723,7 @@
                             <select 
                               value={newTx.accountId || (accounts[0]?.id || 'default-acc')}
                               onChange={e => setNewTx(prev => ({ ...prev, accountId: e.target.value }))}
-                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-700 font-semibold"
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-705 text-slate-700 font-semibold"
                             >
                               {accountsWithBalances.map(acc => {
                                 const totalPower = acc.currentBalance + (acc.overdraftLimit || 0);
@@ -2842,7 +2750,7 @@
                                   }));
                                   setIsInstallment(false);
                                 }}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-700"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-705 text-slate-700"
                               >
                                 <option value="despesa">🔴 Despesa</option>
                                 <option value="receita">🟢 Receita</option>
@@ -2880,7 +2788,7 @@
                       <div className="md:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                         <div className="flex justify-between items-center mb-4">
                           <h3 className="font-extrabold text-slate-900 text-base">Lançamentos Registados</h3>
-                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-600 font-bold hover:underline">
+                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-555 text-emerald-600 font-bold hover:underline">
                             Ver Extrato Completo
                           </button>
                         </div>
@@ -2918,7 +2826,7 @@
                                     <td className="py-3">
                                       {renderStatusBadge(t.status)}
                                     </td>
-                                    <td className="py-3 text-slate-600 text-[11px] leading-tight">
+                                    <td className="py-3 text-slate-655 text-slate-600 text-[11px] leading-tight">
                                       <div className="font-extrabold text-slate-800">
                                         📅 {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
                                       </div>
@@ -2931,7 +2839,7 @@
                                         {isPending && (
                                           <button 
                                             onClick={() => handleClearTransaction(t.id)} 
-                                            className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded"
+                                            className="text-emerald-500 hover:text-emerald-705 p-1 hover:bg-emerald-50 rounded"
                                             title="Liquidar Lançamento"
                                           >
                                             <Icon name="check" className="w-4 h-4" />
@@ -2944,7 +2852,7 @@
                                         >
                                           <Icon name="edit" className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600 p-1">
+                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-655 p-1">
                                           <Icon name="trash" className="w-4 h-4" />
                                         </button>
                                       </div>
@@ -2976,7 +2884,7 @@
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                       <div>
                         <h2 className="text-lg font-black text-slate-900">Extrato Consolidado</h2>
-                        <p className="text-xs text-slate-400">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
+                        <p className="text-xs text-slate-405">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
                       </div>
 
                       <div className="flex flex-wrap gap-2">
@@ -3034,7 +2942,7 @@
                             return (
                               <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/10' : ''}`}>
                                 <td className="py-4">
-                                  <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-900'}`}>{t.desc}</div>
+                                  <div className={`font-semibold ${isPending ? 'text-slate-505 text-slate-500 italic' : 'text-slate-905 text-slate-900'}`}>{t.desc}</div>
                                   <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
                                     <span className={`inline-block w-2 h-2 rounded-full ${linkedAcc.color}`}></span>
                                     <span>{linkedAcc.name}</span>
@@ -3070,7 +2978,7 @@
                                     )}
                                     <button 
                                       onClick={() => openEditModal(t)} 
-                                      className="text-slate-400 hover:text-indigo-650 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                                      className="text-slate-405 text-slate-400 hover:text-indigo-650 p-1.5 hover:bg-slate-100 rounded-lg transition"
                                       title="Editar Lançamento"
                                     >
                                       <Icon name="edit" className="w-4 h-4" />
@@ -3261,7 +3169,7 @@
                       {/* Card de Crédito Físico */}
                       <div className="md:col-span-7 flex flex-col justify-between">
                         <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-xl border border-slate-700/50 flex flex-col justify-between relative overflow-hidden min-h-[220px]">
-                          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-505 bg-indigo-500/10 rounded-full blur-3xl"></div>
                           <div className="absolute bottom-0 left-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl"></div>
                           <div className="flex justify-between items-start">
                             <div>
@@ -3331,7 +3239,7 @@
                             disabled={totalUnpaidCcAmount <= 0}
                             className={`w-full sm:w-auto text-white text-[11px] font-bold px-4 py-3 rounded-xl transition shadow flex items-center justify-center gap-1.5 ${
                               totalUnpaidCcAmount <= 0 
-                                ? 'bg-slate-300 cursor-not-allowed text-slate-500' 
+                                ? 'bg-slate-300 cursor-not-allowed text-slate-505 text-slate-500' 
                                 : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow-lg'
                             }`}
                           >
@@ -3395,7 +3303,7 @@
                                 />
                               </div>
                             </div>
-                            <button type="submit" className="w-full bg-slate-950 text-white font-bold py-2 rounded-xl text-xs hover:bg-slate-800 transition shadow">
+                            <button type="submit" className="w-full bg-slate-955 bg-slate-900 text-white font-bold py-2 rounded-xl text-xs hover:bg-slate-800 transition shadow">
                               Guardar Ajustes
                             </button>
                           </form>
@@ -3459,7 +3367,7 @@
                                 onChange={e => setIsCcInstallment(e.target.checked)}
                                 className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded"
                               />
-                              <label htmlFor="isCcInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer">
+                              <label htmlFor="isCcInstallmentCheckbox" className="text-xs font-bold text-slate-705 text-slate-700 cursor-pointer">
                                 Compra Parcelada / Prestações
                               </label>
                             </div>
@@ -3567,7 +3475,7 @@
                                                 {isCreditItem ? '💰' : catObj.icon}
                                               </span>
                                               <div>
-                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-805 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
+                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-805 text-emerald-800 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
                                                   {item.desc}
                                                 </p>
                                                 <p className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
@@ -3589,7 +3497,7 @@
                                                     Crédito Lançado
                                                   </span>
                                                 ) : item.paid ? (
-                                                  <span className="bg-slate-100 text-slate-500 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
+                                                  <span className="bg-slate-100 text-slate-505 text-slate-500 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
                                                     Pago
                                                   </span>
                                                 ) : (
@@ -3831,7 +3739,7 @@
                                 required
                               />
                             </div>
-                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm">
+                            <button type="submit" className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm">
                               Depositar na Meta
                             </button>
                           </form>
@@ -3968,7 +3876,7 @@
                             <tr key={row.year} className="hover:bg-slate-50/50">
                               <td className="py-2.5 font-bold text-slate-700">{row.year} {row.year === 1 ? 'Ano' : 'Anos'}</td>
                               <td className="py-2.5 text-slate-600">R$ {row.invested.toLocaleString()}</td>
-                              <td className="py-2.5 text-emerald-655 text-emerald-600 font-medium">+ R$ {row.gains.toLocaleString()}</td>
+                              <td className="py-2.5 text-emerald-600 font-medium">+ R$ {row.gains.toLocaleString()}</td>
                               <td className="py-2.5 text-right font-extrabold text-slate-900">R$ {row.total.toLocaleString()}</td>
                             </tr>
                           ))}
