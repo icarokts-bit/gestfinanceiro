@@ -753,7 +753,7 @@
         const updated = transactions.map(t => t.id === updatedTx.id ? updatedTx : t);
         setTransactions(updated);
         saveToLocalStorage(updated, null, null, null, null, null);
-        triggerNotification('Lançamento updated localmente!');
+        triggerNotification('Lançamento atualizado localmente!');
       };
 
       // Liquidar / Efetivar um lançamento pendente
@@ -795,7 +795,7 @@
         triggerNotification('Transação apagada localmente!', 'warning');
       };
 
-      // Efetiver Compra a Crédito no Cartão (Auxiliar interno)
+      // Efetivar Compra a Crédito no Cartão (Auxiliar interno)
       const executeCcTransactionsWrite = async (ccTxsArray) => {
         if (dbStatus === 'synced' && user) {
           try {
@@ -1104,7 +1104,7 @@
         const updated = ccTransactions.map(t => t.id === updatedTx.id ? updatedTx : t);
         setCcTransactions(updated);
         saveToLocalStorage(null, null, null, null, updated, null);
-        triggerNotification('Compra a crédito updated localmente!');
+        triggerNotification('Compra a crédito atualizada localmente!');
       };
 
       // Remover Transação de Cartão de Crédito
@@ -3321,7 +3321,7 @@
                   </div>
                 )}
 
-                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO (TOTALMENTE OTIMIZADO COM PROGRESSO REATIVO) */}
+                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO (TOTALMENTE OTIMIZADO COM PROGRESSO E LISTAGEM DE COMPRAS) */}
                 {activeTab === 'credit-card' && (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
@@ -3366,12 +3366,12 @@
                                 title="Limite Disponível"
                               ></div>
                               <div 
-                                className="h-full bg-amber-500 transition-all duration-550 animate-pulse" 
+                                className="h-full bg-amber-500 transition-all duration-550" 
                                 style={{ width: `${Math.max(0, Math.min(100, (totalUnpaidCcAmount / (ccSettings?.limit || 3000)) * 100))}%` }}
                                 title="Limite Utilizado"
                               ></div>
                             </div>
-                            <div className="flex justify-between text-[8px] text-slate-450 uppercase font-bold">
+                            <div className="flex justify-between text-[8px] text-slate-400 uppercase font-bold">
                               <span>Livre: {((availableCcLimit / (ccSettings?.limit || 3000)) * 100).toFixed(0)}%</span>
                               <span>Usado: {((totalUnpaidCcAmount / (ccSettings?.limit || 3000)) * 100).toFixed(0)}%</span>
                             </div>
@@ -3471,7 +3471,7 @@
                       </div>
                     </div>
 
-                    {/* Lançamento e Inspetor Visual de Faturas Detalhado */}
+                    {/* Formulário de Compra e Listagem Dinâmica */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                       
                       <div className="md:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 h-fit">
@@ -3481,7 +3481,7 @@
                             <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Descrição do Item</label>
                             <input 
                               type="text" 
-                              placeholder="Ex: Telemóvel, Energia Solar"
+                              placeholder="Ex: Telemóvel, Supermercado"
                               value={newCcTx.desc}
                               onChange={e => setNewCcTx(prev => ({ ...prev, desc: e.target.value }))}
                               className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
@@ -3516,7 +3516,7 @@
                               <p className="font-bold flex items-center gap-1">
                                 <span>⚠️</span> <span>Limite do Cartão Excedido</span>
                               </p>
-                              <p>Esta compra ultrapassa o limite disponível.</p>
+                              <p>Esta compra ultrapassa o limite disponível do seu cartão.</p>
                             </div>
                           )}
                           <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
@@ -3567,12 +3567,17 @@
                         </form>
                       </div>
 
-                      {/* MODIFICADO: Inspetor Detalhado de Faturas por Ciclo Mensal */}
+                      {/* MODIFICADO: Exibição Completa e Otimizada de Compras diretamente em cada Fatura Mensal */}
                       <div className="md:col-span-8 space-y-4">
-                        <h3 className="font-extrabold text-slate-900 text-base">Faturas por Ciclo Mensal</h3>
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-extrabold text-slate-900 text-base">Faturas por Ciclo Mensal</h3>
+                          <p className="text-xs text-slate-400">Filtrado pelo período selecionado no menu superior</p>
+                        </div>
                         {Object.keys(groupedInvoices).length === 0 ? (
                           <div className="bg-white rounded-3xl p-12 text-center text-slate-400 border border-slate-100">
-                            <p className="text-xs">Não existem registos de compras a crédito associadas.</p>
+                            <Icon name="creditCard" className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                            <p className="text-xs font-semibold">Não existem faturas criadas ou compras a crédito.</p>
+                            <p className="text-[10px] text-slate-400 mt-1">Insira uma compra para gerar o histórico de faturamento.</p>
                           </div>
                         ) : (
                           Object.keys(groupedInvoices)
@@ -3581,103 +3586,129 @@
                             .map(key => {
                               const invoice = groupedInvoices[key];
                               return (
-                                <div key={key} className="bg-white rounded-3xl p-5 border border-slate-200 space-y-4">
-                                  <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+                                <div key={key} className="bg-white rounded-3xl p-6 border border-slate-200 space-y-5 shadow-sm hover:shadow-md transition">
+                                  
+                                  {/* Topo do Bloco da Fatura */}
+                                  <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-wrap gap-3">
                                     <div>
-                                      <h4 className="font-black text-slate-900 text-sm">{invoice.label}</h4>
-                                      <p className="text-[10px] text-slate-400">Ciclo gerado de compras neste período</p>
+                                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                                        <span className="text-lg">📅</span>
+                                        <span>Fatura de {invoice.label}</span>
+                                      </h4>
+                                      <p className="text-[10px] text-slate-400">Total acumulado neste ciclo: R$ {invoice.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                                     </div>
                                     <div className="flex items-center gap-3">
                                       <div className="text-right">
-                                        <p className="text-[9px] uppercase font-bold text-slate-400">Pendente de Liquidação</p>
-                                        <p className="font-black text-slate-900 text-sm">
+                                        <p className="text-[9px] uppercase font-bold text-slate-400">Resta Pagar / Em Aberto</p>
+                                        <p className="font-black text-slate-900 text-base">
                                           R$ {invoice.unpaidTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </p>
                                       </div>
                                       
                                       {invoice.isPaid ? (
-                                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-1 rounded-full shrink-0">
+                                        <span className="bg-emerald-55 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
                                           ✓ Totalmente Paga
                                         </span>
                                       ) : invoice.unpaidTotal < invoice.total ? (
-                                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-1 rounded-full shrink-0">
+                                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
                                           💡 Amortizada (Parcial)
                                         </span>
                                       ) : (
-                                        <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold px-2 py-1 rounded-full shrink-0">
+                                        <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 animate-pulse">
                                           ⏳ Aberta
                                         </span>
                                       )}
                                     </div>
                                   </div>
 
-                                  {/* Visualizador de compras individuais de cada fatura */}
+                                  {/* NOVA SECÇÃO: COMPRAS INTEGRADAS NA FATURA DESTE MÊS */}
                                   <div className="space-y-2">
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Extrato do Ciclo:</p>
-                                    <div className="divide-y divide-slate-100 max-h-[180px] overflow-y-auto pr-1">
-                                      {invoice.transactions.map(item => (
-                                        <div key={item.id} className="py-2 flex items-center justify-between text-xs hover:bg-slate-50/40 rounded-lg px-1 transition">
-                                          <div className="flex items-center gap-2">
-                                            <span>{CATEGORIES.despesa.find(c => c.id === item.category)?.icon || '🛒'}</span>
-                                            <div>
-                                              <p className={`font-semibold ${item.paid ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                                                {item.desc}
-                                              </p>
-                                              <p className="text-[9px] text-slate-400">
-                                                {new Date(item.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
-                                              </p>
+                                    <h5 className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mb-2">
+                                      Compras Associadas a esta Fatura:
+                                    </h5>
+                                    
+                                    <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden bg-slate-50/50">
+                                      {invoice.transactions.map(item => {
+                                        const catObj = CATEGORIES.despesa.find(c => c.id === item.category) || { name: 'Geral', icon: '🛒' };
+                                        return (
+                                          <div key={item.id} className="py-3 px-4 flex items-center justify-between text-xs hover:bg-slate-50 transition">
+                                            
+                                            {/* Detalhes da Compra */}
+                                            <div className="flex items-center gap-3">
+                                              <span className="text-base p-1.5 bg-white rounded-xl shadow-sm border border-slate-100">{catObj.icon}</span>
+                                              <div>
+                                                <p className={`font-semibold ${item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
+                                                  {item.desc}
+                                                </p>
+                                                <p className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                                  <span>{catObj.name}</span>
+                                                  <span>•</span>
+                                                  <span>Comprado em: {new Date(item.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</span>
+                                                </p>
+                                              </div>
                                             </div>
+
+                                            {/* Preço e Estado */}
+                                            <div className="flex items-center gap-3">
+                                              <div className="text-right">
+                                                <p className={`font-bold font-mono ${item.paid ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                                                  R$ {parseFloat(item.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </p>
+                                                {item.paid ? (
+                                                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
+                                                    Adiantada / Paga
+                                                  </span>
+                                                ) : (
+                                                  <span className="bg-amber-50 text-amber-700 border border-amber-100 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
+                                                    A vencer
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              {/* Ações da Compra */}
+                                              <div className="flex items-center gap-1 border-l border-slate-200/80 pl-2">
+                                                <button 
+                                                  onClick={() => openEditCcModal(item)}
+                                                  className="text-slate-300 hover:text-indigo-650 transition p-1 hover:bg-white rounded-lg"
+                                                  title="Editar Compra"
+                                                >
+                                                  <Icon name="edit" className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button 
+                                                  onClick={() => handleDeleteCcTransaction(item.id)}
+                                                  className="text-slate-300 hover:text-rose-600 transition p-1 hover:bg-white rounded-lg"
+                                                  title="Excluir Compra"
+                                                >
+                                                  <Icon name="trash" className="w-3.5 h-3.5" />
+                                                </button>
+                                              </div>
+                                            </div>
+
                                           </div>
-                                          
-                                          <div className="flex items-center gap-2">
-                                            <span className={`font-bold font-mono ${item.paid ? 'text-slate-400' : 'text-slate-950'}`}>
-                                              R$ {parseFloat(item.amount).toFixed(2)}
-                                            </span>
-                                            {item.paid ? (
-                                              <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[8px] font-bold px-1 rounded">
-                                                PAGO
-                                              </span>
-                                            ) : (
-                                              <span className="bg-amber-50 text-amber-600 border border-amber-100 text-[8px] font-bold px-1 rounded animate-pulse">
-                                                ABERTO
-                                              </span>
-                                            )}
-                                            <button 
-                                              onClick={() => openEditCcModal(item)}
-                                              className="text-slate-300 hover:text-indigo-600 transition p-0.5"
-                                              title="Editar Compra"
-                                            >
-                                              <Icon name="edit" className="w-3 h-3" />
-                                            </button>
-                                            <button 
-                                              onClick={() => handleDeleteCcTransaction(item.id)}
-                                              className="text-slate-300 hover:text-rose-600 transition p-0.5"
-                                              title="Remover Compra"
-                                            >
-                                              <Icon name="trash" className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                     
                                     {invoice.total > invoice.unpaidTotal && (
-                                      <p className="text-[10px] text-emerald-600 italic text-right font-medium">
-                                        💡 Já adiantou R$ {(invoice.total - invoice.unpaidTotal).toFixed(2)} nesta fatura.
-                                      </p>
+                                      <div className="text-right text-[10px] text-emerald-600 font-bold italic pt-1 flex items-center justify-end gap-1">
+                                        <span>💡 Poupança:</span>
+                                        <span>Já adiantou R$ {(invoice.total - invoice.unpaidTotal).toFixed(2)} e liberou este limite de volta para o seu cartão!</span>
+                                      </div>
                                     )}
                                   </div>
 
+                                  {/* Botão de pagamento de fatura restante */}
                                   {!invoice.isPaid && (
-                                    <div className="flex justify-end pt-2">
+                                    <div className="flex justify-end pt-2 border-t border-slate-100">
                                       <button
                                         onClick={() => setPaymentModal({ isOpen: true, invoiceKey: key, label: invoice.label, total: invoice.unpaidTotal, accountId: '' })}
-                                        className="text-[11px] bg-slate-900 hover:bg-slate-800 text-white font-bold px-3.5 py-1.5 rounded-lg transition shadow-sm"
+                                        className="text-[11px] bg-slate-900 hover:bg-slate-800 text-white font-extrabold px-4 py-2.5 rounded-xl transition shadow"
                                       >
-                                        Liquidar Fatura Restante
+                                        💳 Liquidar Fatura Restante
                                       </button>
                                     </div>
                                   )}
+                                  
                                 </div>
                               );
                             })
@@ -3688,10 +3719,12 @@
                   </div>
                 )}
 
-                {/* 5. SEPARADOR: LIMITES DE ORÇAMENTO */}
+                {/* 5. SEPARADOR: LIMITES DE ORÇAMENTO (TOTALMENTE POPULADO) */}
                 {activeTab === 'budgets' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                    <div className="md:col-span-4 bg-white rounded-2xl p-5 border border-slate-200">
+                    
+                    {/* Formulário de Ajuste */}
+                    <div className="md:col-span-4 bg-white rounded-2xl p-5 border border-slate-200 h-fit">
                       <h3 className="font-extrabold text-slate-900 text-base mb-4">Fixar Teto Máximo</h3>
                       <form onSubmit={handleSetBudget} className="space-y-4">
                         <div>
@@ -3699,7 +3732,7 @@
                           <select 
                             value={budgetForm.category}
                             onChange={e => setBudgetForm(prev => ({ ...prev, category: e.target.value }))}
-                            className="w-full text-xs rounded-xl border border-slate-200 py-2.5 focus:outline-none text-slate-700 font-semibold"
+                            className="w-full text-xs rounded-xl border border-slate-200 py-2.5 focus:outline-none text-slate-700 font-semibold cursor-pointer"
                           >
                             {CATEGORIES.despesa.map(c => (
                               <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
@@ -3710,49 +3743,314 @@
                           <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Teto Mensal (R$)</label>
                           <input 
                             type="number" 
+                            step="10"
+                            placeholder="Ex: 500"
                             value={budgetForm.amount}
                             onChange={e => setBudgetForm(prev => ({ ...prev, amount: e.target.value }))}
-                            className="w-full text-xs rounded-xl border border-slate-200 py-2 focus:outline-none"
+                            className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold"
                             required
                           />
                         </div>
-                        <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs">Sincronizar Orçamento</button>
+                        <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-xs transition">
+                          Sincronizar Orçamento
+                        </button>
                       </form>
                     </div>
+
+                    {/* Visão de Progresso Real */}
                     <div className="md:col-span-8 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-                      <h2 className="font-extrabold text-slate-900 text-lg">Acompanhamento de Limites</h2>
+                      <div>
+                        <h2 className="font-extrabold text-slate-900 text-lg">Acompanhamento de Limites</h2>
+                        <p className="text-xs text-slate-400">Verifique em tempo real se os seus gastos ultrapassaram as metas definidas.</p>
+                      </div>
+
+                      <div className="space-y-4 pt-2">
+                        {CATEGORIES.despesa.map(cat => {
+                          const limit = budgets[cat.id] || 0;
+                          const spent = stats.categoryTotals[cat.id] || 0;
+                          const percent = limit > 0 ? (spent / limit) * 100 : 0;
+                          
+                          return (
+                            <div key={cat.id} className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 space-y-2">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                                  <span>{cat.icon}</span> <span>{cat.name}</span>
+                                </span>
+                                <span className="font-semibold text-slate-500">
+                                  {limit > 0 ? (
+                                    <>Spent: <strong className="text-slate-800 font-mono">R$ {spent.toFixed(2)}</strong> / Limite: R$ {limit.toFixed(2)}</>
+                                  ) : (
+                                    <>Spent: <strong className="text-slate-800 font-mono">R$ {spent.toFixed(2)}</strong> (Sem limite fixado)</>
+                                  )}
+                                </span>
+                              </div>
+                              
+                              {limit > 0 && (
+                                <div className="space-y-1">
+                                  <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                                    <div 
+                                      className={`h-full rounded-full transition-all duration-300 ${percent > 100 ? 'bg-rose-500' : percent > 80 ? 'bg-amber-500' : 'bg-indigo-600'}`}
+                                      style={{ width: `${Math.min(100, percent)}%` }}
+                                    ></div>
+                                  </div>
+                                  <div className="flex justify-between items-center text-[9px] font-bold">
+                                    <span className={percent > 100 ? 'text-rose-600' : percent > 80 ? 'text-amber-600' : 'text-indigo-600'}>
+                                      {percent.toFixed(0)}% Utilizado
+                                    </span>
+                                    {percent > 100 && (
+                                      <span className="text-rose-600 animate-pulse">🚨 Teto Máximo Ultrapassado!</span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
+
                   </div>
                 )}
 
-                {/* 6. SEPARADOR: METAS DE POUPANÇA */}
+                {/* 6. SEPARADOR: METAS DE POUPANÇA (TOTALMENTE POPULADO) */}
                 {activeTab === 'goals' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                    
+                    {/* Formulários e Ações */}
                     <div className="md:col-span-4 flex flex-col gap-6">
+                      
+                      {/* Criar Meta */}
                       <div className="bg-white rounded-2xl p-5 border border-slate-200">
                         <h3 className="font-extrabold text-slate-900 text-base mb-4">Nova Meta de Poupança</h3>
                         <form onSubmit={handleCreateGoal} className="space-y-3">
                           <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Nome do Objetivo</label>
                             <input 
                               type="text" 
-                              placeholder="Ex: Viagem, Carro"
+                              placeholder="Ex: Viagem, Fundo de Emergência"
                               value={newGoal.name}
                               onChange={e => setNewGoal(prev => ({ ...prev, name: e.target.value }))}
-                              className="w-full text-xs rounded-xl border border-slate-200 py-2.5 focus:outline-none"
+                              className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
                               required
                             />
                           </div>
+                          
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta (R$)</label>
+                              <input 
+                                type="number" 
+                                placeholder="3000"
+                                value={newGoal.target}
+                                onChange={e => setNewGoal(prev => ({ ...prev, target: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Início (R$)</label>
+                              <input 
+                                type="number" 
+                                placeholder="0"
+                                value={newGoal.current}
+                                onChange={e => setNewGoal(prev => ({ ...prev, current: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Prazo</label>
+                            <input 
+                              type="date"
+                              value={newGoal.deadline}
+                              onChange={e => setNewGoal(prev => ({ ...prev, deadline: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
+                            />
+                          </div>
+
                           <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs">Adicionar Meta</button>
                         </form>
                       </div>
+
+                      {/* Depositar em Meta */}
+                      {goals.length > 0 && (
+                        <div className="bg-white rounded-2xl p-5 border border-slate-200">
+                          <h3 className="font-extrabold text-slate-900 text-base mb-4">Reforçar Objetivo</h3>
+                          <form onSubmit={handleGoalDeposit} className="space-y-3">
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Selecione o Objetivo</label>
+                              <select 
+                                value={goalDeposit.goalId}
+                                onChange={e => setGoalDeposit(prev => ({ ...prev, goalId: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 py-2.5 bg-white text-slate-700 font-semibold"
+                                required
+                              >
+                                <option value="">Escolher meta...</option>
+                                {goals.map(g => (
+                                  <option key={g.id} value={g.id}>{g.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Valor do Aporte (R$)</label>
+                              <input 
+                                type="number" 
+                                step="0.01"
+                                placeholder="0.00"
+                                value={goalDeposit.amount}
+                                onChange={e => setGoalDeposit(prev => ({ ...prev, amount: e.target.value }))}
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold"
+                                required
+                              />
+                            </div>
+                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition">
+                              Realizar Depósito
+                            </button>
+                          </form>
+                        </div>
+                      )}
+
                     </div>
+
+                    {/* Listagem com Progresso */}
+                    <div className="md:col-span-8 bg-white rounded-3xl p-6 border border-slate-200 space-y-4 h-fit">
+                      <div>
+                        <h2 className="font-extrabold text-slate-900 text-lg">Acompanhamento das Suas Metas</h2>
+                        <p className="text-xs text-slate-400">Poupe mensalmente e realize os seus sonhos com registos isolados e privados.</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {goals.map(g => {
+                          const targetVal = parseFloat(g.target) || 1;
+                          const currentVal = parseFloat(g.current) || 0;
+                          const percent = Math.min(100, (currentVal / targetVal) * 100);
+
+                          return (
+                            <div key={g.id} className="p-5 border border-slate-100 bg-slate-50/50 rounded-2xl flex flex-col justify-between space-y-3 relative hover:shadow transition">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h4 className="font-black text-slate-900 text-sm">{g.name}</h4>
+                                  <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Prazo: {new Date(g.deadline).toLocaleDateString()}</p>
+                                </div>
+                                <button onClick={() => handleDeleteGoal(g.id)} className="text-slate-300 hover:text-rose-600 p-1">
+                                  <Icon name="trash" className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="space-y-1 pt-1">
+                                <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                                  <span>Acumulado: <strong className="text-slate-900">R$ {currentVal.toFixed(2)}</strong></span>
+                                  <span>Meta: R$ {targetVal.toFixed(2)}</span>
+                                </div>
+                                <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                  <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${percent}%` }}></div>
+                                </div>
+                                <div className="text-right text-[9px] font-extrabold text-emerald-600">{percent.toFixed(0)}% Concluído</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {goals.length === 0 && (
+                          <div className="sm:col-span-2 py-12 text-center text-slate-400 italic">
+                            <Icon name="piggyBank" className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                            <span>Ainda não possui metas de poupança registadas neste perfil.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                   </div>
                 )}
 
-                {/* 7. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
+                {/* 7. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS (TOTALMENTE POPULADO) */}
                 {activeTab === 'simulator' && (
                   <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-6">
-                    <h2 className="font-extrabold text-slate-900 text-lg">Simulador de Juros Compostos</h2>
+                    <div>
+                      <h2 className="font-extrabold text-slate-900 text-lg">Simulador de Juros Compostos</h2>
+                      <p className="text-xs text-slate-400">Planeie os seus investimentos futuros e perceba o efeito multiplicador do tempo.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] uppercase font-bold text-slate-400">Montante Inicial (R$)</label>
+                        <input 
+                          type="number" 
+                          value={simInitial}
+                          onChange={e => setSimInitial(parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] uppercase font-bold text-slate-400">Aporte Mensal (R$)</label>
+                        <input 
+                          type="number" 
+                          value={simMonthly}
+                          onChange={e => setSimMonthly(parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] uppercase font-bold text-slate-400">Taxa de Juro Anual (%)</label>
+                        <input 
+                          type="number" 
+                          step="0.1"
+                          value={simRate}
+                          onChange={e => setSimRate(parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] uppercase font-bold text-slate-400">Tempo de Análise (Anos)</label>
+                        <input 
+                          type="number" 
+                          value={simYears}
+                          onChange={e => setSimYears(parseInt(e.target.value) || 0)}
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Resultados Rápidos */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-5">
+                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">Total Acumulado Bruto</p>
+                        <p className="text-xl font-black text-slate-900">R$ {investmentSimulation.finalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                      </div>
+                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">Total Próprio Investido</p>
+                        <p className="text-xl font-black text-slate-700 font-medium">R$ {investmentSimulation.totalInvested.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                      </div>
+                      <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                        <p className="text-[10px] text-emerald-800 font-bold uppercase">Total Ganho em Juros</p>
+                        <p className="text-xl font-black text-emerald-700">R$ {investmentSimulation.totalGains.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                      </div>
+                    </div>
+
+                    {/* Histórico Temporal da Evolução */}
+                    <div className="overflow-x-auto pt-2">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-150 text-slate-400 font-bold">
+                            <th className="pb-2">Tempo decorrido</th>
+                            <th className="pb-2">Montante Próprio</th>
+                            <th className="pb-2">Lucro Obtido (Juros)</th>
+                            <th className="pb-2 text-right font-bold">Montante Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {investmentSimulation.timeline.map(row => (
+                            <tr key={row.year} className="hover:bg-slate-50/50">
+                              <td className="py-2.5 font-bold text-slate-700">{row.year} {row.year === 1 ? 'Ano' : 'Anos'}</td>
+                              <td className="py-2.5 text-slate-600">R$ {row.invested.toLocaleString()}</td>
+                              <td className="py-2.5 text-emerald-600 font-medium">+ R$ {row.gains.toLocaleString()}</td>
+                              <td className="py-2.5 text-right font-extrabold text-slate-900">R$ {row.total.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
