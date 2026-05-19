@@ -582,7 +582,7 @@
         const updated = accounts.map(a => a.id === updatedAcc.id ? updatedAcc : a);
         setAccounts(updated);
         saveToLocalStorage(null, null, null, null, null, updated);
-        triggerNotification('Conta atualizada localmente!');
+        triggerNotification('Conta updated localmente!');
       };
 
       // Remover Conta Bancária
@@ -1552,7 +1552,7 @@
         return { income, expense, balance: totalBalance, savingsRate, categoryTotals, pendingIncome, pendingExpense };
       }, [transactionsFilteredByMonth, accountsWithBalances]);
 
-      // Atribuir as compras a crédito ao seu respetivo período de faturação (Mês da Fatura)
+      // MODIFICADO: Atribuir as compras a crédito ao seu período de faturação (agora calcula "unpaidTotal" de forma inteligente)
       const groupedInvoices = useMemo(() => {
         const invoices = {};
         const closingDay = ccSettings?.closingDay || 5;
@@ -1586,6 +1586,7 @@
               label: invoiceLabel,
               transactions: [],
               total: 0,
+              unpaidTotal: 0,
               isPaid: true
             };
           }
@@ -1593,6 +1594,7 @@
           invoices[invoiceKey].transactions.push(tx);
           invoices[invoiceKey].total += parseFloat(tx.amount);
           if (!tx.paid) {
+            invoices[invoiceKey].unpaidTotal += parseFloat(tx.amount);
             invoices[invoiceKey].isPaid = false;
           }
         });
@@ -1633,9 +1635,13 @@
         return Math.max(0, totalLimit - totalUnpaidCcAmount);
       }, [ccSettings, totalUnpaidCcAmount]);
 
-      // Valor da Fatura Aberta no mês ativo
+      // MODIFICADO: Agora exibe apenas o valor de compras por pagar na fatura ativa (deduzindo adiantamentos)
       const activeInvoiceTotal = useMemo(() => {
-        return groupedInvoices[activeInvoiceKey]?.isPaid ? 0 : (groupedInvoices[activeInvoiceKey]?.total || 0);
+        const activeInvoice = groupedInvoices[activeInvoiceKey];
+        if (!activeInvoice) return 0;
+        return activeInvoice.transactions
+          .filter(tx => !tx.paid)
+          .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
       }, [groupedInvoices, activeInvoiceKey]);
 
       // Alertas de limite do formulário
@@ -2224,7 +2230,10 @@
                       <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Categoria</label>
                       <select 
                         value={editModal.transaction.category}
-                        onChange={e => setNewTx(prev => ({ ...prev, category: e.target.value }))}
+                        onChange={e => setEditModal(prev => ({
+                          ...prev,
+                          transaction: { ...prev.transaction, category: e.target.value }
+                        }))}
                         className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none"
                       >
                         {CATEGORIES[editModal.transaction.type].map(c => (
@@ -2628,7 +2637,7 @@
                           <p className="text-xl font-black text-amber-600">
                             R$ {activeInvoiceTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-1">Fatura do mês de análise</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Valor pendente na fatura</p>
                         </div>
                         <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
                           <Icon name="creditCard" className="w-5 h-5" />
@@ -3312,10 +3321,12 @@
                   </div>
                 )}
 
-                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO */}
+                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO (TOTALMENTE OTIMIZADO COM PROGRESSO REATIVO) */}
                 {activeTab === 'credit-card' && (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                      
+                      {/* Card de Crédito Físico */}
                       <div className="md:col-span-7 flex flex-col justify-between">
                         <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-xl border border-slate-700/50 flex flex-col justify-between relative overflow-hidden min-h-[220px]">
                           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
@@ -3333,18 +3344,39 @@
                           </div>
                           <div className="grid grid-cols-2 gap-4 my-4">
                             <div>
-                              <p className="text-[10px] text-slate-400 uppercase">Limite Disponível</p>
+                              <p className="text-[10px] text-slate-400 uppercase">Limite Disponível (Liberado)</p>
                               <p className="text-xl font-extrabold text-emerald-400">
                                 R$ {availableCcLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                             <div>
-                              <p className="text-[10px] text-slate-400 uppercase">Total Utilizado</p>
+                              <p className="text-[10px] text-slate-400 uppercase">Dívida de Cartão (Uso)</p>
                               <p className="text-xl font-extrabold text-amber-500">
                                 R$ {totalUnpaidCcAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                           </div>
+                          
+                          {/* Barra de Progresso Reativa de Limite */}
+                          <div className="space-y-1 mb-2">
+                            <div className="w-full bg-slate-750 rounded-full h-2 overflow-hidden flex">
+                              <div 
+                                className="h-full bg-emerald-400 transition-all duration-550" 
+                                style={{ width: `${Math.max(0, Math.min(100, (availableCcLimit / (ccSettings?.limit || 3000)) * 100))}%` }}
+                                title="Limite Disponível"
+                              ></div>
+                              <div 
+                                className="h-full bg-amber-500 transition-all duration-550 animate-pulse" 
+                                style={{ width: `${Math.max(0, Math.min(100, (totalUnpaidCcAmount / (ccSettings?.limit || 3000)) * 100))}%` }}
+                                title="Limite Utilizado"
+                              ></div>
+                            </div>
+                            <div className="flex justify-between text-[8px] text-slate-450 uppercase font-bold">
+                              <span>Livre: {((availableCcLimit / (ccSettings?.limit || 3000)) * 100).toFixed(0)}%</span>
+                              <span>Usado: {((totalUnpaidCcAmount / (ccSettings?.limit || 3000)) * 100).toFixed(0)}%</span>
+                            </div>
+                          </div>
+
                           <div className="flex justify-between items-end border-t border-white/5 pt-3 text-[10px]">
                             <div>
                               <span className="text-slate-400 mr-2">Fecho:</span>
@@ -3368,13 +3400,15 @@
                             className={`w-full sm:w-auto text-white text-[11px] font-bold px-4 py-3 rounded-xl transition shadow flex items-center justify-center gap-1.5 ${
                               totalUnpaidCcAmount === 0 
                                 ? 'bg-slate-300 cursor-not-allowed text-slate-500' 
-                                : 'bg-emerald-600 hover:bg-emerald-700'
+                                : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow-lg'
                             }`}
                           >
-                            <span>💰 Adiantar Pagamento do Cartão</span>
+                            <span>💰 Adiantar Pagamento do Cartão (Subir Limite)</span>
                           </button>
                         </div>
                       </div>
+
+                      {/* Configuração Básica */}
                       <div className="md:col-span-5 bg-white rounded-3xl p-5 border border-slate-200 flex flex-col justify-between">
                         <div>
                           <h3 className="font-extrabold text-slate-900 text-sm mb-3 flex items-center gap-2">
@@ -3436,7 +3470,10 @@
                         </div>
                       </div>
                     </div>
+
+                    {/* Lançamento e Inspetor Visual de Faturas Detalhado */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                      
                       <div className="md:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 h-fit">
                         <h3 className="font-extrabold text-slate-900 text-sm mb-3">Lançar Compra a Crédito</h3>
                         <form onSubmit={handleAddCcTransaction} className="space-y-3">
@@ -3529,11 +3566,13 @@
                           </button>
                         </form>
                       </div>
+
+                      {/* MODIFICADO: Inspetor Detalhado de Faturas por Ciclo Mensal */}
                       <div className="md:col-span-8 space-y-4">
                         <h3 className="font-extrabold text-slate-900 text-base">Faturas por Ciclo Mensal</h3>
                         {Object.keys(groupedInvoices).length === 0 ? (
                           <div className="bg-white rounded-3xl p-12 text-center text-slate-400 border border-slate-100">
-                            <p className="text-xs">Não existem registos de faturas.</p>
+                            <p className="text-xs">Não existem registos de compras a crédito associadas.</p>
                           </div>
                         ) : (
                           Object.keys(groupedInvoices)
@@ -3546,16 +3585,105 @@
                                   <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
                                     <div>
                                       <h4 className="font-black text-slate-900 text-sm">{invoice.label}</h4>
+                                      <p className="text-[10px] text-slate-400">Ciclo gerado de compras neste período</p>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                      <p className="font-black text-slate-900 text-sm">R$ {invoice.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                      <div className="text-right">
+                                        <p className="text-[9px] uppercase font-bold text-slate-400">Pendente de Liquidação</p>
+                                        <p className="font-black text-slate-900 text-sm">
+                                          R$ {invoice.unpaidTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </p>
+                                      </div>
+                                      
+                                      {invoice.isPaid ? (
+                                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-1 rounded-full shrink-0">
+                                          ✓ Totalmente Paga
+                                        </span>
+                                      ) : invoice.unpaidTotal < invoice.total ? (
+                                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-1 rounded-full shrink-0">
+                                          💡 Amortizada (Parcial)
+                                        </span>
+                                      ) : (
+                                        <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold px-2 py-1 rounded-full shrink-0">
+                                          ⏳ Aberta
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
+
+                                  {/* Visualizador de compras individuais de cada fatura */}
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Extrato do Ciclo:</p>
+                                    <div className="divide-y divide-slate-100 max-h-[180px] overflow-y-auto pr-1">
+                                      {invoice.transactions.map(item => (
+                                        <div key={item.id} className="py-2 flex items-center justify-between text-xs hover:bg-slate-50/40 rounded-lg px-1 transition">
+                                          <div className="flex items-center gap-2">
+                                            <span>{CATEGORIES.despesa.find(c => c.id === item.category)?.icon || '🛒'}</span>
+                                            <div>
+                                              <p className={`font-semibold ${item.paid ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                                                {item.desc}
+                                              </p>
+                                              <p className="text-[9px] text-slate-400">
+                                                {new Date(item.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
+                                              </p>
+                                            </div>
+                                          </div>
+                                          
+                                          <div className="flex items-center gap-2">
+                                            <span className={`font-bold font-mono ${item.paid ? 'text-slate-400' : 'text-slate-950'}`}>
+                                              R$ {parseFloat(item.amount).toFixed(2)}
+                                            </span>
+                                            {item.paid ? (
+                                              <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[8px] font-bold px-1 rounded">
+                                                PAGO
+                                              </span>
+                                            ) : (
+                                              <span className="bg-amber-50 text-amber-600 border border-amber-100 text-[8px] font-bold px-1 rounded animate-pulse">
+                                                ABERTO
+                                              </span>
+                                            )}
+                                            <button 
+                                              onClick={() => openEditCcModal(item)}
+                                              className="text-slate-300 hover:text-indigo-600 transition p-0.5"
+                                              title="Editar Compra"
+                                            >
+                                              <Icon name="edit" className="w-3 h-3" />
+                                            </button>
+                                            <button 
+                                              onClick={() => handleDeleteCcTransaction(item.id)}
+                                              className="text-slate-300 hover:text-rose-600 transition p-0.5"
+                                              title="Remover Compra"
+                                            >
+                                              <Icon name="trash" className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    
+                                    {invoice.total > invoice.unpaidTotal && (
+                                      <p className="text-[10px] text-emerald-600 italic text-right font-medium">
+                                        💡 Já adiantou R$ {(invoice.total - invoice.unpaidTotal).toFixed(2)} nesta fatura.
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {!invoice.isPaid && (
+                                    <div className="flex justify-end pt-2">
+                                      <button
+                                        onClick={() => setPaymentModal({ isOpen: true, invoiceKey: key, label: invoice.label, total: invoice.unpaidTotal, accountId: '' })}
+                                        className="text-[11px] bg-slate-900 hover:bg-slate-800 text-white font-bold px-3.5 py-1.5 rounded-lg transition shadow-sm"
+                                      >
+                                        Liquidar Fatura Restante
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })
                         )}
                       </div>
+
                     </div>
                   </div>
                 )}
