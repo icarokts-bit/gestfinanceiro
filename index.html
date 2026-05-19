@@ -134,7 +134,9 @@
         creditCard: <><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M4 16h4"/></>,
         settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
         bank: <><rect x="3" y="21" width="18" height="2"/><rect x="5" y="10" width="2" height="11"/><rect x="11" y="10" width="2" height="11"/><rect x="17" y="10" width="2" height="11"/><polygon points="12 2 2 9 22 9 12 2"/></>,
-        edit: <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+        edit: <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>,
+        chevronLeft: <polyline points="15 18 9 12 15 6"/>,
+        chevronRight: <polyline points="9 18 15 12 9 6"/>
       };
 
       return (
@@ -175,12 +177,15 @@
       const [ccSettings, setCcSettings] = useState(DEFAULT_CC_SETTINGS);
       const [ccTransactions, setCcTransactions] = useState([]);
 
+      // Estado para filtro global de Mês selecionado no Menu (Default: Maio de 2026)
+      const [selectedMonth, setSelectedMonth] = useState('2026-05');
+
       // Estados de UI e Navegação
       const [activeTab, setActiveTab] = useState('dashboard');
       const [notification, setNotification] = useState(null);
       const [paymentModal, setPaymentModal] = useState({ isOpen: false, invoiceKey: null, label: '', total: 0, accountId: '' });
       
-      // NOVO: Estado para Modal de Adiantamento de Fatura do Cartão
+      // Estado para Modal de Adiantamento de Fatura do Cartão
       const [prepaymentModal, setPrepaymentModal] = useState({
         isOpen: false,
         amountType: 'total', // 'total' | 'custom'
@@ -220,8 +225,14 @@
       
       const [ccSettingsForm, setCcSettingsForm] = useState({ limit: '', closingDay: '', dueDay: '', cardName: '' });
       
-      // Formulário de Nova Conta Bancária
-      const [newAccount, setNewAccount] = useState({ name: '', type: 'corrente', initialBalance: '', color: 'bg-blue-600' });
+      // ALTERAÇÃO: Adicionado o campo "overdraftLimit" (Cheque Especial) no formulário de Nova Conta Bancária
+      const [newAccount, setNewAccount] = useState({ 
+        name: '', 
+        type: 'corrente', 
+        initialBalance: '', 
+        color: 'bg-blue-600',
+        overdraftLimit: '1000' // Valor padrão: R$ 1.000,00
+      });
 
       // Estados do Simulador de Juros Compostos
       const [simInitial, setSimInitial] = useState(5000);
@@ -314,7 +325,7 @@
               try {
                 await signInWithCustomToken(auth, __initial_auth_token);
               } catch (tokenErr) {
-                console.warn("Token customizado incompatível. A efetuar login anónimo de contingência...", tokenErr);
+                console.warn("Token customizado incompatível. Login anónimo...", tokenErr);
                 await signInAnonymously(auth);
               }
             } else {
@@ -338,9 +349,18 @@
       }, []);
 
       // Criar conta padrão se nenhuma existir (Garante resiliência)
+      // ALTERAÇÃO: Adicionada propriedade "overdraftLimit" de R$ 1000 por padrão
       useEffect(() => {
         if (!loading && accounts.length === 0) {
-          const defaultAcc = [{ id: 'default-acc', name: 'Conta Principal', type: 'corrente', initialBalance: 0, color: 'bg-blue-600', createdAt: new Date().toISOString() }];
+          const defaultAcc = [{ 
+            id: 'default-acc', 
+            name: 'Conta Principal', 
+            type: 'corrente', 
+            initialBalance: 0, 
+            overdraftLimit: 1000, 
+            color: 'bg-blue-600', 
+            createdAt: new Date().toISOString() 
+          }];
           setAccounts(defaultAcc);
           saveToLocalStorage(null, null, null, null, null, defaultAcc);
         }
@@ -483,10 +503,11 @@
       // 3. OPERAÇÕES DE GRAVAÇÃO (ESCRITAS COM COMPATIBILIDADE LOCAL)
       // ---------------------------------------------------------
 
-      // Adicionar Nova Conta Bancária
+      // Adicionar Nova Conta Bancária (Suporta Cheque Especial)
       const handleCreateAccount = async (e) => {
         e.preventDefault();
         const initial = parseFloat(newAccount.initialBalance) || 0;
+        const odfLimit = parseFloat(newAccount.overdraftLimit) || 0;
         if (!newAccount.name.trim()) {
           triggerNotification('O nome da conta é obrigatório.', 'error');
           return;
@@ -496,6 +517,7 @@
           name: newAccount.name.trim(),
           type: newAccount.type,
           initialBalance: initial,
+          overdraftLimit: odfLimit,
           color: newAccount.color,
           createdAt: new Date().toISOString()
         };
@@ -513,7 +535,7 @@
           saveAccountLocally(accData);
         }
 
-        setNewAccount({ name: '', type: 'corrente', initialBalance: '', color: 'bg-blue-600' });
+        setNewAccount({ name: '', type: 'corrente', initialBalance: '', color: 'bg-blue-600', overdraftLimit: '1000' });
       };
 
       const saveAccountLocally = (accData) => {
@@ -692,7 +714,7 @@
         const updated = transactions.map(t => t.id === updatedTx.id ? updatedTx : t);
         setTransactions(updated);
         saveToLocalStorage(updated, null, null, null, null, null);
-        triggerNotification('Lançamento updated localmente!');
+        triggerNotification('Lançamento atualizado localmente!');
       };
 
       // Liquidar / Efetivar um lançamento pendente
@@ -846,7 +868,7 @@
         triggerNotification('Prestações guardadas localmente!');
       };
 
-      // NOVO: Abrir o modal de adiantamento de fatura
+      // Abrir o modal de adiantamento de fatura
       const openPrepaymentModal = () => {
         setPrepaymentModal({
           isOpen: true,
@@ -856,7 +878,7 @@
         });
       };
 
-      // NOVO: Executar adiantamento de pagamento do cartão de crédito
+      // Executar adiantamento de pagamento do cartão de crédito
       const handleConfirmPrepayment = async () => {
         const totalUnpaid = totalUnpaidCcAmount;
         let paymentAmount = 0;
@@ -880,8 +902,11 @@
         const targetAccId = prepaymentModal.accountId || accounts[0]?.id || 'default-acc';
         const targetAcc = accountsWithBalances.find(a => a.id === targetAccId);
 
-        if (targetAcc && targetAcc.currentBalance < paymentAmount) {
-          triggerNotification(`Erro: Saldo insuficiente na conta ${targetAcc.name}!`, 'error');
+        // ALTERAÇÃO: Permite utilizar Cheque Especial da conta selecionada para adiantar pagamentos
+        const totalAvailableWithOverdraft = targetAcc ? (targetAcc.currentBalance + (parseFloat(targetAcc.overdraftLimit) || 0)) : 0;
+
+        if (targetAcc && totalAvailableWithOverdraft < paymentAmount) {
+          triggerNotification(`Erro: Limite insuficiente (incluindo Cheque Especial) na conta ${targetAcc.name}!`, 'error');
           return;
         }
 
@@ -1105,8 +1130,11 @@
         const targetAccId = accountId || accounts[0]?.id || 'default-acc';
         const targetAcc = accountsWithBalances.find(a => a.id === targetAccId);
 
-        if (targetAcc && targetAcc.currentBalance < total) {
-          triggerNotification(`Erro: Saldo insuficiente na conta ${targetAcc.name}!`, 'error');
+        // ALTERAÇÃO: Permite utilizar Cheque Especial para o pagamento de Faturas
+        const totalAvailableWithOverdraft = targetAcc ? (targetAcc.currentBalance + (parseFloat(targetAcc.overdraftLimit) || 0)) : 0;
+
+        if (targetAcc && totalAvailableWithOverdraft < total) {
+          triggerNotification(`Erro: Limite insuficiente (incluindo Cheque Especial) na conta ${targetAcc.name}!`, 'error');
           setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0, accountId: '' });
           return;
         }
@@ -1361,7 +1389,63 @@
       // 5. MÉTODOS DE CÁLCULO DINÂMICO DE CONTAS E ESTATÍSTICAS
       // ---------------------------------------------------------
 
-      // Calcular o saldo corrente de cada conta em tempo real combinando apenas lançamentos LIQUIDADOS
+      // Cálculo Dinâmico da Lista de Meses Disponíveis com base nos registos reais existentes
+      const availableMonths = useMemo(() => {
+        const monthsSet = new Set();
+        
+        // Incluir o mês de referência atual por segurança para nunca estar vazio
+        monthsSet.add("2026-05");
+
+        transactions.forEach(t => {
+          if (t.date && t.date.length >= 7) {
+            monthsSet.add(t.date.substring(0, 7)); // Obtém o padrão YYYY-MM
+          }
+        });
+
+        ccTransactions.forEach(t => {
+          if (t.date && t.date.length >= 7) {
+            monthsSet.add(t.date.substring(0, 7));
+          }
+        });
+
+        // Ordenar de forma decrescente
+        const sorted = Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
+
+        return sorted.map(m => {
+          const [year, month] = m.split('-');
+          const dateObj = new Date(parseInt(year), parseInt(month) - 1, 15);
+          const rawLabel = dateObj.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+          const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+          return { value: m, label };
+        });
+      }, [transactions, ccTransactions]);
+
+      // Navegar para o mês seguinte ou anterior de forma reativa
+      const navigateMonth = (direction) => {
+        if (selectedMonth === 'all') return;
+        const index = availableMonths.findIndex(m => m.value === selectedMonth);
+        if (index === -1) return;
+
+        let targetIndex = index + (direction === 'next' ? -1 : 1);
+        if (targetIndex >= 0 && targetIndex < availableMonths.length) {
+          setSelectedMonth(availableMonths[targetIndex].value);
+        }
+      };
+
+      // Filtrar as transações que pertencem ao mês selecionado de forma inteligente
+      const transactionsFilteredByMonth = useMemo(() => {
+        if (selectedMonth === 'all') return transactions;
+        return transactions.filter(t => t.date && t.date.startsWith(selectedMonth));
+      }, [transactions, selectedMonth]);
+
+      // Filtrar compras a crédito do mês de referência
+      const ccTransactionsFilteredByMonth = useMemo(() => {
+        if (selectedMonth === 'all') return ccTransactions;
+        return ccTransactions.filter(t => t.date && t.date.startsWith(selectedMonth));
+      }, [ccTransactions, selectedMonth]);
+
+      // ALTERAÇÃO: Para fins bancários reais e visualização de Cheque Especial, o saldo corrente de cada conta
+      // deve acumular TODAS as transações anteriores (histórico real), e não apenas as do mês filtrado no menu.
       const accountsWithBalances = useMemo(() => {
         return accounts.map(acc => {
           let currentVal = parseFloat(acc.initialBalance) || 0;
@@ -1383,7 +1467,7 @@
         });
       }, [accounts, transactions]);
 
-      // Estatísticas gerais considerando os estados pendente e liquidado
+      // Estatísticas gerais considerando os estados pendente e liquidado do período selecionado
       const stats = useMemo(() => {
         const totalBalance = accountsWithBalances.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
@@ -1392,7 +1476,7 @@
         let pendingIncome = 0;
         let pendingExpense = 0;
         
-        transactions.forEach(t => {
+        transactionsFilteredByMonth.forEach(t => {
           const amt = parseFloat(t.amount) || 0;
           if (t.status === 'pendente') {
             if (t.type === 'receita') {
@@ -1412,12 +1496,12 @@
         const savingsRate = income > 0 ? Math.max(0, Math.min(100, ((income - expense) / income) * 100)) : 0;
 
         const categoryTotals = {};
-        transactions.filter(t => t.type === 'despesa' && t.status !== 'pendente').forEach(t => {
+        transactionsFilteredByMonth.filter(t => t.type === 'despesa' && t.status !== 'pendente').forEach(t => {
           categoryTotals[t.category] = (categoryTotals[t.category] || 0) + parseFloat(t.amount);
         });
 
         return { income, expense, balance: totalBalance, savingsRate, categoryTotals, pendingIncome, pendingExpense };
-      }, [transactions, accountsWithBalances]);
+      }, [transactionsFilteredByMonth, accountsWithBalances]);
 
       // Atribuir as compras a crédito ao seu respetivo período de faturação (Mês da Fatura)
       const groupedInvoices = useMemo(() => {
@@ -1469,6 +1553,9 @@
 
       // Descobrir a Chave da Fatura Ativa (Mês corrente de gastos)
       const activeInvoiceKey = useMemo(() => {
+        if (selectedMonth !== 'all') {
+          return selectedMonth;
+        }
         const today = new Date();
         const closingDay = ccSettings?.closingDay || 5;
         let yr = today.getFullYear();
@@ -1483,7 +1570,7 @@
           }
         }
         return `${yr}-${String(m + 1).padStart(2, '0')}`;
-      }, [ccSettings]);
+      }, [ccSettings, selectedMonth]);
 
       // Dívida total não paga e Limite disponível do Cartão
       const totalUnpaidCcAmount = useMemo(() => {
@@ -1508,15 +1595,56 @@
         return (!isNaN(amt) && amt > availableCcLimit);
       }, [newCcTx.amount, availableCcLimit]);
 
-      // Alertas Inteligentes de Saúde Financeira
+      // ALTERAÇÃO: Cálculo de Alerta de Cheque Especial no Formulário de Lançamento Ativo
+      const overdraftProjectedWarning = useMemo(() => {
+        if (newTx.type !== 'despesa') return null;
+        const amt = parseFloat(newTx.amount) || 0;
+        if (amt <= 0) return null;
+
+        const targetId = newTx.accountId || accounts[0]?.id || 'default-acc';
+        const targetAcc = accountsWithBalances.find(a => a.id === targetId);
+        if (!targetAcc) return null;
+
+        const projectedBalance = targetAcc.currentBalance - amt;
+        const odfLimit = parseFloat(targetAcc.overdraftLimit) || 0;
+
+        if (projectedBalance < 0) {
+          const requiredOdf = Math.abs(projectedBalance);
+          const exceedsLimit = requiredOdf > odfLimit;
+
+          return {
+            accName: targetAcc.name,
+            projectedBalance,
+            requiredOdf,
+            odfLimit,
+            exceedsLimit
+          };
+        }
+
+        return null;
+      }, [newTx, accountsWithBalances, accounts]);
+
+      // ALTERAÇÃO: Adicionados alertas do Cheque Especial ao motor de IA de Saúde Financeira
       const financialTips = useMemo(() => {
         const tips = [];
+        
+        // Verifica se alguma conta está a usar o cheque especial atualmente
+        accountsWithBalances.forEach(acc => {
+          if (acc.currentBalance < 0) {
+            const usedOdf = Math.abs(acc.currentBalance);
+            tips.push({
+              type: 'danger',
+              text: `⚠️ CHEQUE ESPECIAL ATIVO: A conta "${acc.name}" está com saldo negativo em R$ ${usedOdf.toFixed(2)}. Serão aplicados juros e IOF diários pelo seu banco! Evite manter-se nesta situação.`
+            });
+          }
+        });
+
         if (stats.savingsRate > 20) {
           tips.push({ type: 'success', text: `Excelente! Conseguiu poupar ${stats.savingsRate.toFixed(1)}% do seu orçamento. Considere investir em longo prazo.` });
         } else if (stats.savingsRate > 0) {
           tips.push({ type: 'info', text: `A sua taxa de poupança situa-se em ${stats.savingsRate.toFixed(1)}%. Tente poupar um pouco mais para atingir a meta recomendada de 20%.` });
-        } else if (transactions.length > 0) {
-          tips.push({ type: 'danger', text: `Atenção: As suas despesas superaram as receitas este mês. Avalie conter despesas não essenciais.` });
+        } else if (transactionsFilteredByMonth.length > 0) {
+          tips.push({ type: 'warning', text: `Atenção: As suas despesas superaram as receitas este mês. Avalie conter despesas não essenciais.` });
         }
 
         // Alerta de Limite do Cartão de Crédito
@@ -1536,7 +1664,7 @@
         });
 
         return tips;
-      }, [stats, budgets, transactions, availableCcLimit, ccSettings]);
+      }, [stats, budgets, transactionsFilteredByMonth, availableCcLimit, ccSettings, accountsWithBalances]);
 
       // Simulador de Juros Compostos
       const investmentSimulation = useMemo(() => {
@@ -1564,16 +1692,16 @@
         return { finalValue: balance, totalInvested, totalGains: balance - totalInvested, timeline };
       }, [simInitial, simMonthly, simRate, simYears]);
 
-      // Filtros Rápidos das Transações em Memória
+      // Filtros Rápidos das Transações em Memória (Filtra também com base no mês de referência)
       const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => {
+        return transactionsFilteredByMonth.filter(t => {
           const matchesSearch = t.desc.toLowerCase().includes(searchQuery.toLowerCase());
           const matchesType = filterType === 'all' || t.type === filterType;
           const matchesCategory = filterCategory === 'all' || t.category === filterCategory;
           const matchesStatus = filterStatus === 'all' || (t.status || 'liquidado') === filterStatus;
           return matchesSearch && matchesType && matchesCategory && matchesStatus;
         });
-      }, [transactions, searchQuery, filterType, filterCategory, filterStatus]);
+      }, [transactionsFilteredByMonth, searchQuery, filterType, filterCategory, filterStatus]);
 
       // Cálculo de visualização do pré-pagamento/adiantamento
       const prepaymentLivePreview = useMemo(() => {
@@ -1593,7 +1721,7 @@
       return (
         <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
           
-          {/* NOVO: Modal de Adiantamento de Pagamento (Amortização Fatura) */}
+          {/* Modal de Adiantamento de Pagamento (Amortização Fatura) */}
           {prepaymentModal.isOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all animate-bounce-short">
@@ -1667,7 +1795,7 @@
                     >
                       {accountsWithBalances.map(acc => (
                         <option key={acc.id} value={acc.id}>
-                          {acc.name} (Saldo: R$ {acc.currentBalance.toFixed(2)})
+                          {acc.name} (Disponível: R$ {acc.currentBalance.toFixed(2)} + Cheque Especial)
                         </option>
                       ))}
                     </select>
@@ -1758,7 +1886,7 @@
             </div>
           )}
 
-          {/* Modal de Confirmação de Pagamento de Fatura (Com Seletor de Conta) */}
+          {/* Modal de Confirmação de Pagamento de Fatura */}
           {paymentModal.isOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all">
@@ -1776,7 +1904,6 @@
                       <strong className="text-slate-900 text-sm">R$ {paymentModal.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
                     </div>
                     
-                    {/* Seletor de Conta para Débito */}
                     <div className="pt-2 border-t border-slate-200">
                       <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Conta para débito</label>
                       <select 
@@ -1938,10 +2065,7 @@
                       <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Categoria</label>
                       <select 
                         value={editModal.transaction.category}
-                        onChange={e => setEditModal(prev => ({
-                          ...prev,
-                          transaction: { ...prev.transaction, category: e.target.value }
-                        }))}
+                        onChange={e => setNewTx(prev => ({ ...prev, category: e.target.value }))}
                         className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none"
                       >
                         {CATEGORIES[editModal.transaction.type].map(c => (
@@ -2069,7 +2193,7 @@
                 </div>
                 <div>
                   <h1 className="text-xl font-extrabold tracking-tight">FinançasPro</h1>
-                  <p className="text-xs text-slate-400">Motor de Sincronização em Tempo Real</p>
+                  <p className="text-xs text-slate-400">Gestor Inteligente de Caixa & Crédito</p>
                 </div>
               </div>
 
@@ -2133,6 +2257,70 @@
               
               {/* Navegação Lateral */}
               <aside className="lg:col-span-3 flex flex-col gap-3">
+                
+                {/* Widget Seletor do Mês de Referência */}
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-2">
+                    📅 Período de Análise
+                  </p>
+                  
+                  <div className="flex items-center gap-1.5">
+                    {/* Botão Retroceder Mês */}
+                    <button
+                      onClick={() => navigateMonth('prev')}
+                      disabled={selectedMonth === 'all'}
+                      className={`p-2 rounded-xl border transition shrink-0 ${
+                        selectedMonth === 'all' 
+                          ? 'border-slate-100 text-slate-300 cursor-not-allowed' 
+                          : 'border-slate-200 hover:bg-slate-50 text-slate-600'
+                      }`}
+                      title="Mês Anterior"
+                    >
+                      <Icon name="chevronLeft" className="w-4 h-4" />
+                    </button>
+
+                    {/* Caixa de Seleção Completa */}
+                    <select
+                      value={selectedMonth}
+                      onChange={e => setSelectedMonth(e.target.value)}
+                      className="flex-1 text-xs font-extrabold rounded-xl border border-slate-200 px-2 py-2.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                    >
+                      <option value="all">🌐 Todos os Períodos</option>
+                      {availableMonths.map(m => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Botão Avançar Mês */}
+                    <button
+                      onClick={() => navigateMonth('next')}
+                      disabled={selectedMonth === 'all'}
+                      className={`p-2 rounded-xl border transition shrink-0 ${
+                        selectedMonth === 'all' 
+                          ? 'border-slate-100 text-slate-300 cursor-not-allowed' 
+                          : 'border-slate-200 hover:bg-slate-50 text-slate-600'
+                      }`}
+                      title="Mês Seguinte"
+                    >
+                      <Icon name="chevronRight" className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  {selectedMonth !== 'all' && (
+                    <div className="mt-2.5 text-center">
+                      <button
+                        onClick={() => setSelectedMonth('all')}
+                        className="text-[10px] text-indigo-600 font-bold hover:underline"
+                      >
+                        Ver todo o histórico acumulado
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Menu de Navegação */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 px-3 mb-2">Menu de Navegação</p>
                   <nav className="flex flex-col gap-1">
@@ -2153,7 +2341,7 @@
                       }`}
                     >
                       <Icon name="fileText" className="w-4 h-4" />
-                      Extrato de Transações ({transactions.length})
+                      Extrato de Transações ({transactionsFilteredByMonth.length})
                     </button>
 
                     <button 
@@ -2162,7 +2350,7 @@
                         activeTab === 'accounts' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
                       }`}
                     >
-                      <Icon name="bank" className="w-4 h-4 animate-pulse" />
+                      <Icon name="bank" className="w-4 h-4" />
                       Contas Correntes ({accounts.length})
                     </button>
 
@@ -2230,16 +2418,18 @@
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold text-slate-400 uppercase">Saldo Líquido</p>
-                          <p className={`text-xl font-black ${stats.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Saldo Líquido Total</p>
+                          <p className={`text-xl font-black ${stats.balance >= 0 ? 'text-slate-900' : 'text-rose-600 animate-pulse'}`}>
                             R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          {stats.pendingExpense > 0 || stats.pendingIncome > 0 ? (
+                          {stats.balance < 0 ? (
+                            <p className="text-[9px] text-rose-500 mt-1 font-bold">⚠️ Em uso do Cheque Especial</p>
+                          ) : stats.pendingExpense > 0 || stats.pendingIncome > 0 ? (
                             <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-0.5" title="Valores futuros ainda não contabilizados no saldo corrente">
                               <span>Futuro: +R$ {stats.pendingIncome.toFixed(2)} | -R$ {stats.pendingExpense.toFixed(2)}</span>
                             </p>
                           ) : (
-                            <p className="text-[10px] text-slate-400 mt-1">Soma de contas liquidadas</p>
+                            <p className="text-[10px] text-slate-400 mt-1 font-medium">Soma acumulada de contas</p>
                           )}
                         </div>
                         <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
@@ -2249,11 +2439,11 @@
 
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold text-slate-400 uppercase">Receitas</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Receitas (Mês)</p>
                           <p className="text-xl font-black text-emerald-600">
                             + R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-1">Efetivadas em conta</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Efetivadas no período</p>
                         </div>
                         <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
                           <Icon name="arrowUpRight" className="w-5 h-5" />
@@ -2262,11 +2452,11 @@
 
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold text-slate-400 uppercase">Despesas Caixa</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Despesas Caixa (Mês)</p>
                           <p className="text-xl font-black text-rose-600">
                             - R$ {stats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-1">Contas liquidadas à vista</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Liquidadas à vista no período</p>
                         </div>
                         <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
                           <Icon name="arrowDownRight" className="w-5 h-5" />
@@ -2275,11 +2465,11 @@
 
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold text-slate-400 uppercase">Fatura Crédito</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Fatura Crédito (Mês)</p>
                           <p className="text-xl font-black text-amber-600">
                             R$ {activeInvoiceTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-1">Ciclo corrente aberto</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Fatura do mês de análise</p>
                         </div>
                         <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
                           <Icon name="creditCard" className="w-5 h-5" />
@@ -2294,12 +2484,12 @@
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                         <h3 className="font-extrabold text-slate-900 text-base mb-4 flex items-center gap-2">
                           <Icon name="pieChart" className="w-5 h-5 text-emerald-600" />
-                          Custos por Categoria (Liquidados)
+                          Custos por Categoria ({selectedMonth === 'all' ? 'Todos os Períodos' : 'Mês de Análise'})
                         </h3>
 
                         {stats.expense === 0 ? (
                           <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center space-y-3">
-                            <p className="text-xs">Não existem despesas liquidadas registadas no banco de dados.</p>
+                            <p className="text-xs">Não existem despesas liquidadas registadas neste período.</p>
                             <button 
                               onClick={handleGenerateMockData}
                               className="text-xs bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-slate-850"
@@ -2335,7 +2525,7 @@
                         )}
                       </div>
 
-                      {/* Notificações do Planeador */}
+                      {/* Notificações do Planeador (Inclui os avisos do Cheque Especial) */}
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
                         <div>
                           <h3 className="font-extrabold text-slate-900 text-base mb-4 flex items-center gap-2">
@@ -2343,16 +2533,16 @@
                             Avisos do Planeador
                           </h3>
 
-                          <div className="space-y-3.5">
+                          <div className="space-y-3">
                             {financialTips.length === 0 ? (
-                              <p className="text-slate-400 text-xs">A sua saúde financeira está excelente. Continue com a consistência de registo!</p>
+                              <p className="text-slate-400 text-xs">A sua saúde financeira está excelente neste período. Continue com os registos!</p>
                             ) : (
                               financialTips.map((tip, idx) => (
                                 <div key={idx} className={`p-3 rounded-xl text-xs border flex gap-3 ${
                                   tip.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-800' :
                                   tip.type === 'warning' ? 'bg-amber-50 border-amber-100 text-amber-800' : 'bg-rose-50 border-rose-100 text-rose-800'
                                 }`}>
-                                  <span>{tip.type === 'success' ? '🌟' : '⚠️'}</span>
+                                  <span className="shrink-0">{tip.type === 'success' ? '🌟' : tip.type === 'warning' ? '⚠️' : '🚨'}</span>
                                   <span>{tip.text}</span>
                                 </div>
                               ))
@@ -2361,7 +2551,7 @@
                         </div>
 
                         <div className="mt-4 pt-4 border-t border-slate-100 text-[10px] text-center text-slate-400">
-                          Dados processados na memória local sem impacto na quota do Cloud Firestore.
+                          Dados processados em tempo real de acordo com o mês selecionado no menu lateral.
                         </div>
                       </div>
 
@@ -2412,7 +2602,26 @@
                             </div>
                           </div>
 
-                          {/* FUNCIONALIDADE: LANÇAR DESPESA PARCELADA */}
+                          {/* ALTERAÇÃO: Renderizar reativamente o Alerta de Cheque Especial no Lançamento */}
+                          {overdraftProjectedWarning && (
+                            <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-xl text-[11px] text-amber-900 space-y-1">
+                              <p className="font-bold flex items-center gap-1 text-xs">
+                                <span>⚠️</span> <span>Uso de Cheque Especial Detetado</span>
+                              </p>
+                              <p>Esta despesa utilizará <strong className="text-rose-600">R$ {overdraftProjectedWarning.requiredOdf.toFixed(2)}</strong> do limite de cheque especial da conta <strong>{overdraftProjectedWarning.accName}</strong>.</p>
+                              {overdraftProjectedWarning.exceedsLimit ? (
+                                <p className="text-[10px] text-rose-600 font-bold leading-tight mt-1">
+                                  🚨 ERRO: O valor excede o limite disponível de cheque especial desta conta (R$ {overdraftProjectedWarning.odfLimit.toFixed(2)}).
+                                </p>
+                              ) : (
+                                <p className="text-[10px] text-amber-700 italic leading-tight">
+                                  Serão aplicadas taxas de utilização diárias do seu banco caso confirme o lançamento.
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* LANÇAR DESPESA PARCELADA */}
                           {newTx.type === 'despesa' && (
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
                               <div className="flex items-center gap-2">
@@ -2532,19 +2741,24 @@
 
                           <button 
                             type="submit"
-                            className="w-full mt-2 bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-800 transition shadow"
+                            disabled={overdraftProjectedWarning?.exceedsLimit}
+                            className={`w-full mt-2 font-bold py-2.5 rounded-xl text-xs transition shadow ${
+                              overdraftProjectedWarning?.exceedsLimit
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'bg-slate-900 hover:bg-slate-800 text-white'
+                            }`}
                           >
-                            {isInstallment ? `Confirmar ${installmentsCount} Prestações` : 'Confirmar Lançamento'}
+                            {overdraftProjectedWarning?.exceedsLimit ? 'Limite Insuficiente' : isInstallment ? `Confirmar ${installmentsCount} Prestações` : 'Confirmar Lançamento'}
                           </button>
                         </form>
                       </div>
 
-                      {/* Lista de transações */}
+                      {/* Lista de transações filtradas por mês */}
                       <div className="md:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                         <div className="flex justify-between items-center mb-4">
-                          <h3 className="font-extrabold text-slate-900 text-base">Últimos Lançamentos Sincronizados</h3>
+                          <h3 className="font-extrabold text-slate-900 text-base">Lançamentos Registados</h3>
                           <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-600 font-bold hover:underline">
-                            Ver Extrato
+                            Ver Extrato Completo
                           </button>
                         </div>
 
@@ -2560,7 +2774,7 @@
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
-                              {transactions.slice(0, 5).map(t => {
+                              {transactionsFilteredByMonth.slice(0, 5).map(t => {
                                 const isInc = t.type === 'receita';
                                 const catList = isInc ? CATEGORIES.receita : CATEGORIES.despesa;
                                 const catObj = catList.find(c => c.id === t.category) || { name: 'Geral', icon: '💸' };
@@ -2619,10 +2833,10 @@
                                 );
                               })}
 
-                              {transactions.length === 0 && (
+                              {transactionsFilteredByMonth.length === 0 && (
                                 <tr>
                                   <td colSpan="5" className="py-8 text-center text-slate-400 italic">
-                                    Sem dados registados na nuvem. Comece por adicionar um lançamento!
+                                    Nenhum lançamento registado para este período de análise.
                                   </td>
                                 </tr>
                               )}
@@ -2758,7 +2972,7 @@
                   </div>
                 )}
 
-                {/* 3. SEPARADOR: GESTÃO DE CONTAS CORRENTES */}
+                {/* 3. SEPARADOR: GESTÃO DE CONTAS CORRENTES (Suporte completo a Cheque Especial) */}
                 {activeTab === 'accounts' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     
@@ -2805,6 +3019,19 @@
                           </div>
                         </div>
 
+                        {/* ALTERAÇÃO: Adicionado o campo "Limite do Cheque Especial" na criação de Contas */}
+                        <div>
+                          <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Limite do Cheque Especial (R$)</label>
+                          <input 
+                            type="number" 
+                            step="0.01"
+                            placeholder="1000.00"
+                            value={newAccount.overdraftLimit}
+                            onChange={e => setNewAccount(prev => ({ ...prev, overdraftLimit: e.target.value }))}
+                            className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none font-semibold text-slate-800"
+                          />
+                        </div>
+
                         <div>
                           <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Cor de Identificação</label>
                           <select 
@@ -2827,19 +3054,26 @@
                       </form>
                     </div>
 
-                    {/* Painel Direito: Listagem de Contas Existentes */}
+                    {/* Painel Direito: Listagem de Contas Existentes com Alerta do Cheque Especial */}
                     <div className="md:col-span-8 bg-white rounded-3xl p-6 border border-slate-200 space-y-4">
                       <div>
-                        <h2 className="font-extrabold text-slate-900 text-lg">Suas Contas Bancárias</h2>
-                        <p className="text-xs text-slate-400">Gerencie saldos iniciais e verifique as disponibilidades de caixa.</p>
+                        <h2 className="font-extrabold text-slate-900 text-lg">As Suas Contas Bancárias</h2>
+                        <p className="text-xs text-slate-400">Verifique os seus saldos correntes e os limites de crédito ativo.</p>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {accountsWithBalances.map(acc => {
                           const isNegative = acc.currentBalance < 0;
+                          const overdraftLimit = parseFloat(acc.overdraftLimit) || 0;
+                          
+                          // Cálculo do uso percentual do cheque especial
+                          const usedOverdraft = isNegative ? Math.abs(acc.currentBalance) : 0;
+                          const overdraftPercentage = overdraftLimit > 0 ? (usedOverdraft / overdraftLimit) * 100 : 0;
 
                           return (
-                            <div key={acc.id} className="p-5 border border-slate-100 rounded-3xl bg-slate-50/50 hover:shadow-sm transition flex flex-col justify-between space-y-4">
+                            <div key={acc.id} className={`p-5 border rounded-3xl transition flex flex-col justify-between space-y-4 ${
+                              isNegative ? 'bg-rose-50/45 border-rose-200 shadow-sm' : 'bg-slate-50/50 border-slate-100 hover:shadow-sm'
+                            }`}>
                               <div className="flex justify-between items-start">
                                 <div className="flex items-center gap-2.5">
                                   <span className={`inline-block w-3.5 h-3.5 rounded-full ${acc.color} shadow-sm`}></span>
@@ -2862,7 +3096,7 @@
                                 )}
                               </div>
 
-                              <div className="border-t border-slate-200 pt-3">
+                              <div className="border-t border-slate-200/60 pt-3">
                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Saldo Corrente</p>
                                 <p className={`text-xl font-black ${isNegative ? 'text-rose-600' : 'text-slate-900'}`}>
                                   R$ {acc.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -2871,6 +3105,30 @@
                                   (Inicial: R$ {(parseFloat(acc.initialBalance) || 0).toFixed(2)})
                                 </span>
                               </div>
+
+                              {/* ALTERAÇÃO: Renderizar informações do Cheque Especial na visualização do card de Conta */}
+                              <div className="border-t border-slate-200/40 pt-2.5 space-y-1.5">
+                                <div className="flex justify-between text-[10px] text-slate-500 font-bold">
+                                  <span>Limite do Cheque Especial:</span>
+                                  <span className="text-slate-700">R$ {overdraftLimit.toFixed(2)}</span>
+                                </div>
+                                
+                                {isNegative && (
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px] font-bold text-rose-600">
+                                      <span>⚠️ Uso do Cheque Especial:</span>
+                                      <span>{overdraftPercentage.toFixed(0)}%</span>
+                                    </div>
+                                    <div className="w-full bg-rose-100 rounded-full h-1.5 overflow-hidden">
+                                      <div className="h-1.5 rounded-full bg-rose-500" style={{ width: `${Math.min(100, overdraftPercentage)}%` }}></div>
+                                    </div>
+                                    <p className="text-[9px] text-rose-700 italic leading-tight pt-1">
+                                      Está a utilizar R$ {usedOverdraft.toFixed(2)} do limite de crédito emergencial desta conta.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
                             </div>
                           );
                         })}
@@ -2937,7 +3195,7 @@
                           </div>
                         </div>
 
-                        {/* NOVO: Barra de Ações Rápidas (Adiantar Pagamento) */}
+                        {/* Barra de Ações Rápidas (Adiantar Pagamento) */}
                         <div className="flex justify-end gap-2 mt-3">
                           <button 
                             type="button"
@@ -3031,7 +3289,7 @@
                             <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Descrição do Item</label>
                             <input 
                               type="text" 
-                              placeholder="Ex: Supermercado, Energia Solar"
+                              placeholder="Ex: Telemóvel, Energia Solar"
                               value={newCcTx.desc}
                               onChange={e => setNewCcTx(prev => ({ ...prev, desc: e.target.value }))}
                               className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
@@ -3144,93 +3402,96 @@
                             <p className="text-xs">Não existem registos de compras a crédito associadas a esta conta.</p>
                           </div>
                         ) : (
-                          Object.keys(groupedInvoices).sort((a,b) => b.localeCompare(a)).map(key => {
-                            const invoice = groupedInvoices[key];
-                            const isCurrent = (key === activeInvoiceKey);
+                          Object.keys(groupedInvoices)
+                            .filter(key => selectedMonth === 'all' || key === selectedMonth)
+                            .sort((a,b) => b.localeCompare(a))
+                            .map(key => {
+                              const invoice = groupedInvoices[key];
+                              const isCurrent = (key === activeInvoiceKey);
 
-                            return (
-                              <div key={key} className="bg-white rounded-3xl p-5 border border-slate-200 space-y-4">
-                                <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <h4 className="font-black text-slate-900 text-sm">{invoice.label}</h4>
-                                      {isCurrent && (
-                                        <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-[9px] font-bold px-2 py-0.5 rounded-full">
-                                          Ciclo Aberto (Atual)
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">
-                                      Referência de Fatura: <span className="font-mono">{invoice.key}</span>
-                                    </p>
-                                  </div>
-
-                                  <div className="flex items-center gap-3">
-                                    <div className="text-right">
-                                      <p className="text-[9px] text-slate-400 uppercase font-bold">Subtotal</p>
-                                      <p className="font-black text-slate-900 text-sm">
-                                        R$ {invoice.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              return (
+                                <div key={key} className="bg-white rounded-3xl p-5 border border-slate-200 space-y-4">
+                                  <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <h4 className="font-black text-slate-900 text-sm">{invoice.label}</h4>
+                                        {isCurrent && (
+                                          <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                                            Ciclo Aberto (Atual)
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[10px] text-slate-400 mt-0.5">
+                                        Referência de Fatura: <span className="font-mono">{invoice.key}</span>
                                       </p>
                                     </div>
 
-                                    {invoice.isPaid ? (
-                                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1">
-                                        <Icon name="check" className="w-3.5 h-3.5" /> Pago
-                                      </span>
-                                    ) : (
-                                      <button 
-                                        onClick={() => setPaymentModal({ isOpen: true, invoiceKey: invoice.key, label: invoice.label, total: invoice.total, accountId: '' })}
-                                        className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold px-3 py-2 rounded-xl transition shadow"
-                                      >
-                                        Pagar Fatura
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
+                                    <div className="flex items-center gap-3">
+                                      <div className="text-right">
+                                        <p className="text-[9px] text-slate-400 uppercase font-bold">Subtotal</p>
+                                        <p className="font-black text-slate-900 text-sm">
+                                          R$ {invoice.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </p>
+                                      </div>
 
-                                {/* Listagem de movimentos desta fatura */}
-                                <div className="divide-y divide-slate-50">
-                                  {invoice.transactions.map(t => {
-                                    const catObj = CATEGORIES.despesa.find(c => c.id === t.category) || { name: 'Outros', icon: '🛒' };
-                                    return (
-                                      <div key={t.id} className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50/40 rounded-lg px-1 transition">
-                                        <div>
-                                          <p className="font-semibold text-slate-800">{t.desc}</p>
-                                          <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                                            <span>{catObj.icon} {catObj.name}</span>
-                                            <span>•</span>
-                                            <span>{new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</span>
+                                      {invoice.isPaid ? (
+                                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1">
+                                          <Icon name="check" className="w-3.5 h-3.5" /> Pago
+                                        </span>
+                                      ) : (
+                                        <button 
+                                          onClick={() => setPaymentModal({ isOpen: true, invoiceKey: invoice.key, label: invoice.label, total: invoice.total, accountId: '' })}
+                                          className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold px-3 py-2 rounded-xl transition shadow"
+                                        >
+                                          Pagar Fatura
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Listagem de movimentos desta fatura */}
+                                  <div className="divide-y divide-slate-50">
+                                    {invoice.transactions.map(t => {
+                                      const catObj = CATEGORIES.despesa.find(c => c.id === t.category) || { name: 'Outros', icon: '🛒' };
+                                      return (
+                                        <div key={t.id} className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50/40 rounded-lg px-1 transition">
+                                          <div>
+                                            <p className="font-semibold text-slate-800">{t.desc}</p>
+                                            <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                              <span>{catObj.icon} {catObj.name}</span>
+                                              <span>•</span>
+                                              <span>{new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</span>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-bold text-slate-700 font-mono">
+                                              R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            </span>
+                                            {!t.paid && (
+                                              <div className="flex items-center gap-1">
+                                                <button 
+                                                  onClick={() => openEditCcModal(t)}
+                                                  className="text-slate-300 hover:text-indigo-600 p-1"
+                                                  title="Editar Compra"
+                                                >
+                                                  <Icon name="edit" className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button 
+                                                  onClick={() => handleDeleteCcTransaction(t.id)}
+                                                  className="text-slate-300 hover:text-rose-600 p-1"
+                                                >
+                                                  <Icon name="trash" className="w-3.5 h-3.5" />
+                                                </button>
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-bold text-slate-700 font-mono">
-                                            R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                          </span>
-                                          {!t.paid && (
-                                            <div className="flex items-center gap-1">
-                                              <button 
-                                                onClick={() => openEditCcModal(t)}
-                                                className="text-slate-300 hover:text-indigo-600 p-1"
-                                                title="Editar Compra"
-                                              >
-                                                <Icon name="edit" className="w-3.5 h-3.5" />
-                                              </button>
-                                              <button 
-                                                onClick={() => handleDeleteCcTransaction(t.id)}
-                                                className="text-slate-300 hover:text-rose-600 p-1"
-                                              >
-                                                <Icon name="trash" className="w-3.5 h-3.5" />
-                                              </button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
+                                      );
+                                    })}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })
+                              );
+                            })
                         )}
 
                       </div>
