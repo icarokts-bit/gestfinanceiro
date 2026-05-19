@@ -795,7 +795,7 @@
         triggerNotification('Transação apagada localmente!', 'warning');
       };
 
-      // Efetivar Compra a Crédito no Cartão (Auxiliar interno)
+      // Efetiver Compra a Crédito no Cartão (Auxiliar interno)
       const executeCcTransactionsWrite = async (ccTxsArray) => {
         if (dbStatus === 'synced' && user) {
           try {
@@ -842,6 +842,7 @@
             category: newCcTx.category,
             date: dateStr,
             paid: false,
+            isCredit: false,
             createdAt: new Date().toISOString()
           };
 
@@ -917,7 +918,7 @@
         });
       };
 
-      // Executar adiantamento de pagamento do cartão de crédito
+      // MODIFICADO: Executar adiantamento SEM alterar as compras originais. Lançamos um Crédito no Cartão.
       const handleConfirmPrepayment = async () => {
         const totalUnpaid = totalUnpaidCcAmount;
         let paymentAmount = 0;
@@ -949,9 +950,9 @@
           return;
         }
 
-        // 1. Criar transação de despesa na conta bancária selecionada
+        // 1. Criar transação de débito/despesa na conta bancária selecionada
         const prepaymentTx = {
-          desc: `Adiantamento de Fatura do Cartão (R$ ${paymentAmount.toFixed(2)})`,
+          desc: `Adiantamento de Fatura do Cartão`,
           amount: paymentAmount,
           type: 'despesa',
           category: 'outros_desp',
@@ -962,52 +963,16 @@
           createdAt: new Date().toISOString()
         };
 
-        // 2. Procurar transações a crédito não pagas ordenadas por data (mais antigas primeiro) para amortizar
-        const unpaidTxs = [...ccTransactions]
-          .filter(t => !t.paid)
-          .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-        let remainingPrepaid = Math.round(paymentAmount * 100) / 100;
-        const txsToUpdate = [];
-        const txsToAdd = [];
-
-        for (const tx of unpaidTxs) {
-          if (remainingPrepaid <= 0) break;
-
-          const txAmount = parseFloat(tx.amount);
-          if (txAmount <= remainingPrepaid) {
-            // Marcar como totalmente paga
-            txsToUpdate.push({
-              id: tx.id,
-              payload: { paid: true }
-            });
-            remainingPrepaid = Math.round((remainingPrepaid - txAmount) * 100) / 100;
-          } else {
-            // Dividir transação!
-            // Parte A: Fração paga (nova compra já marcada como paga)
-            txsToAdd.push({
-              desc: `${tx.desc} (Fraç. Adiantada)`,
-              amount: remainingPrepaid,
-              category: tx.category,
-              date: tx.date,
-              paid: true,
-              createdAt: new Date().toISOString()
-            });
-
-            // Parte B: Fração restante por pagar (atualizar a original)
-            const remainingAmount = Math.round((txAmount - remainingPrepaid) * 100) / 100;
-            txsToUpdate.push({
-              id: tx.id,
-              payload: {
-                desc: `${tx.desc} (Saldo Restante)`,
-                amount: remainingAmount,
-                paid: false
-              }
-            });
-
-            remainingPrepaid = 0;
-          }
-        }
+        // 2. Criar um lançamento de CRÉDITO (valor negativo) na lista do cartão
+        const creditCardItem = {
+          desc: `Crédito de Adiantamento`,
+          amount: -paymentAmount, // Armazena como negativo
+          category: 'outros_desp',
+          date: new Date().toISOString().split('T')[0],
+          paid: false,
+          isCredit: true,
+          createdAt: new Date().toISOString()
+        };
 
         // 3. Efetuar a persistência no Firebase ou offline local
         if (dbStatus === 'synced' && user) {
@@ -1016,45 +981,29 @@
             const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
             await addDoc(txCollectionRef, prepaymentTx);
 
-            // Atualizar e criar registos no cartão
+            // Gravar o crédito de adiantamento no cartão de crédito
             const ccTxCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions');
-            
-            for (const item of txsToUpdate) {
-              const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions', item.id);
-              await updateDoc(docRef, item.payload);
-            }
+            await addDoc(ccTxCollectionRef, creditCardItem);
 
-            for (const item of txsToAdd) {
-              await addDoc(ccTxCollectionRef, item);
-            }
-
-            triggerNotification(`Adiantamento de R$ ${paymentAmount.toFixed(2)} sincronizado na nuvem!`);
+            triggerNotification(`Adiantamento de R$ ${paymentAmount.toFixed(2)} efetuado com sucesso!`);
           } catch (err) {
             console.error("Erro no adiantamento, aplicando local:", err);
-            processPrepaymentLocally(prepaymentTx, txsToUpdate, txsToAdd);
+            processPrepaymentLocally(prepaymentTx, creditCardItem);
           }
         } else {
-          processPrepaymentLocally(prepaymentTx, txsToUpdate, txsToAdd);
+          processPrepaymentLocally(prepaymentTx, creditCardItem);
         }
 
         setPrepaymentModal({ isOpen: false, amountType: 'total', customAmount: '', accountId: '' });
       };
 
-      const processPrepaymentLocally = (prepaymentTx, txsToUpdate, txsToAdd) => {
+      const processPrepaymentLocally = (prepaymentTx, creditCardItem) => {
         const newLocalTx = { id: Date.now().toString(), ...prepaymentTx };
         const updatedTxs = [newLocalTx, ...transactions];
         setTransactions(updatedTxs);
 
-        const updatedCcTxs = ccTransactions.map(t => {
-          const updateObj = txsToUpdate.find(u => u.id === t.id);
-          if (updateObj) {
-            return { ...t, ...updateObj.payload };
-          }
-          return t;
-        });
-
-        const newlyAdded = txsToAdd.map((t, idx) => ({ id: (Date.now() + 1000 + idx).toString(), ...t }));
-        const finalCcTxs = [...newlyAdded, ...updatedCcTxs];
+        const newCcItem = { id: (Date.now() + 1000).toString(), ...creditCardItem };
+        const finalCcTxs = [newCcItem, ...ccTransactions];
         
         setCcTransactions(finalCcTxs);
         saveToLocalStorage(updatedTxs, null, null, null, finalCcTxs, null);
@@ -1072,7 +1021,7 @@
       const handleUpdateCcTransaction = async (e) => {
         e.preventDefault();
         const tx = editCcModal.transaction;
-        if (!tx.desc.trim() || !tx.amount || parseFloat(tx.amount) <= 0) {
+        if (!tx.desc.trim() || !tx.amount) {
           triggerNotification('Preencha os campos com valores válidos.', 'error');
           return;
         }
@@ -1088,9 +1037,9 @@
             const ccTxDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions', tx.id);
             const { id, ...payload } = updatedTx;
             await updateDoc(ccTxDocRef, payload);
-            triggerNotification('Compra a crédito atualizada!');
+            triggerNotification('Lançamento do cartão atualizado!');
           } catch (err) {
-            console.error("Erro ao atualizar compra no Firebase:", err);
+            console.error("Erro ao atualizar no Firebase:", err);
             updateCcTxLocally(updatedTx);
           }
         } else {
@@ -1104,7 +1053,7 @@
         const updated = ccTransactions.map(t => t.id === updatedTx.id ? updatedTx : t);
         setCcTransactions(updated);
         saveToLocalStorage(null, null, null, null, updated, null);
-        triggerNotification('Compra a crédito atualizada localmente!');
+        triggerNotification('Lançamento do cartão atualizado localmente!');
       };
 
       // Remover Transação de Cartão de Crédito
@@ -1161,7 +1110,7 @@
         triggerNotification('Definições do cartão guardadas localmente!');
       };
 
-      // Processar pagamento da Fatura
+      // Processar pagamento da Fatura (Liquidar tudo)
       const handleConfirmPayment = async () => {
         const { invoiceKey, label, total, accountId } = paymentModal;
         if (!invoiceKey) return;
@@ -1201,7 +1150,7 @@
               const ccDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions', item.id);
               await updateDoc(ccDocRef, { paid: true });
             }
-            triggerNotification(`Fatura de ${label} paga com sucesso via Firebase!`);
+            triggerNotification(`Fatura de ${label} paga com sucesso!`);
           } catch (err) {
             console.error("Erro no pagamento na nuvem:", err);
             processPaymentLocally(paymentTx, txsToUpdate);
@@ -1360,7 +1309,7 @@
           try {
             const budgetsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', 'limits');
             await setDoc(budgetsDocRef, updatedBudgets);
-            triggerNotification('Limite de despesa updated no Firebase!');
+            triggerNotification('Limite de despesa atualizado no Firebase!');
           } catch (err) {
             console.error(err);
             saveBudgetLocally(updatedBudgets);
@@ -1428,7 +1377,7 @@
       // 5. MÉTODOS DE CÁLCULO DINÂMICO DE CONTAS E ESTATÍSTICAS
       // ---------------------------------------------------------
 
-      // MODIFICADO: Cálculo Dinâmico da Lista de Meses Disponíveis baseado em DATA DE VENCIMENTO
+      // Cálculo Dinâmico da Lista de Meses Disponíveis baseado em DATA DE VENCIMENTO
       const availableMonths = useMemo(() => {
         const monthsSet = new Set();
         
@@ -1473,7 +1422,7 @@
         }
       };
 
-      // MODIFICADO: Filtrar transações pelo mês selecionado considerando rigorosamente a DATA DE VENCIMENTO
+      // Filtrar transações pelo mês selecionado considerando rigorosamente a DATA DE VENCIMENTO
       const transactionsFilteredByMonth = useMemo(() => {
         if (selectedMonth === 'all') return transactions;
         return transactions.filter(t => {
@@ -1507,7 +1456,6 @@
             }
           });
 
-          // CORREÇÃO: Fallback Robusto. Se a conta não tem overdraftLimit no documento, assume 1000 em vez de crashar ou ir a 0.
           const overdraftLimit = acc.overdraftLimit !== undefined && acc.overdraftLimit !== null 
             ? parseFloat(acc.overdraftLimit) 
             : 1000;
@@ -1552,7 +1500,7 @@
         return { income, expense, balance: totalBalance, savingsRate, categoryTotals, pendingIncome, pendingExpense };
       }, [transactionsFilteredByMonth, accountsWithBalances]);
 
-      // MODIFICADO: Atribuir as compras a crédito ao seu período de faturação (agora calcula "unpaidTotal" de forma inteligente)
+      // Atribuir as compras/créditos a crédito ao seu período de faturação correspondente
       const groupedInvoices = useMemo(() => {
         const invoices = {};
         const closingDay = ccSettings?.closingDay || 5;
@@ -1623,7 +1571,7 @@
         return `${yr}-${String(m + 1).padStart(2, '0')}`;
       }, [ccSettings, selectedMonth]);
 
-      // Dívida total não paga e Limite disponível do Cartão
+      // Dívida total não paga e Limite disponível do Cartão (deduzindo os créditos de adiantamento)
       const totalUnpaidCcAmount = useMemo(() => {
         return ccTransactions
           .filter(tx => !tx.paid)
@@ -1635,7 +1583,7 @@
         return Math.max(0, totalLimit - totalUnpaidCcAmount);
       }, [ccSettings, totalUnpaidCcAmount]);
 
-      // MODIFICADO: Agora exibe apenas o valor de compras por pagar na fatura ativa (deduzindo adiantamentos)
+      // Agora exibe apenas o valor de compras por pagar na fatura ativa (deduzindo adiantamentos)
       const activeInvoiceTotal = useMemo(() => {
         const activeInvoice = groupedInvoices[activeInvoiceKey];
         if (!activeInvoice) return 0;
@@ -1679,7 +1627,7 @@
         return null;
       }, [newTx, accountsWithBalances, accounts]);
 
-      // Alertas do Cheque Especial ao motor de IA de Saúde Financeira
+      // Alertas do Cheque Especial ao motor de Saúde Financeira
       const financialTips = useMemo(() => {
         const tips = [];
         
@@ -1747,7 +1695,7 @@
         return { finalValue: balance, totalInvested, totalGains: balance - totalInvested, timeline };
       }, [simInitial, simMonthly, simRate, simYears]);
 
-      // Filtros Rápidos das Transações em Memória (Filtra também com base no mês de referência de Vencimento)
+      // Filtros Rápidos das Transações em Memória
       const filteredTransactions = useMemo(() => {
         return transactionsFilteredByMonth.filter(t => {
           const matchesSearch = t.desc.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1758,7 +1706,7 @@
         });
       }, [transactionsFilteredByMonth, searchQuery, filterType, filterCategory, filterStatus]);
 
-      // Cálculo de visualização do pré-pagamento/adiantamento
+      // Cálculo de visualização do pré-pagamento/adiantamento reativo
       const prepaymentLivePreview = useMemo(() => {
         let paymentAmount = 0;
         if (prepaymentModal.amountType === 'total') {
@@ -1786,7 +1734,7 @@
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900">Adiantar Pagamento</h3>
-                    <p className="text-xs text-slate-400">Amortizar saldo de compras a crédito</p>
+                    <p className="text-xs text-slate-400">Inserir crédito de amortização na fatura do mês</p>
                   </div>
                 </div>
 
@@ -1863,16 +1811,16 @@
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 space-y-2 text-xs">
                     <p className="font-bold text-slate-700 mb-1">Impacto Reativo no Cartão:</p>
                     <div className="flex justify-between text-slate-500">
-                      <span>Valor a pagar agora:</span>
-                      <strong className="text-emerald-600 font-mono">+ R$ {prepaymentLivePreview.paymentAmount.toFixed(2)}</strong>
+                      <span>Crédito de Adiantamento:</span>
+                      <strong className="text-emerald-600 font-mono">- R$ {prepaymentLivePreview.paymentAmount.toFixed(2)}</strong>
                     </div>
                     <div className="flex justify-between text-slate-500">
-                      <span>Dívida remanescente no Cartão:</span>
+                      <span>Fatura Restante no Cartão:</span>
                       <strong className="text-slate-700 font-mono">R$ {prepaymentLivePreview.nextUnpaid.toFixed(2)}</strong>
                     </div>
                     <div className="flex justify-between border-t border-slate-200/80 pt-2 font-semibold text-slate-800">
-                      <span>Novo Limite Disponível:</span>
-                      <strong className="text-slate-900 font-mono">R$ {prepaymentLivePreview.nextAvailable.toFixed(2)}</strong>
+                      <span>Limite Liberado de Volta:</span>
+                      <strong className="text-emerald-600 font-mono">R$ {prepaymentLivePreview.nextAvailable.toFixed(2)}</strong>
                     </div>
                   </div>
 
@@ -2054,7 +2002,7 @@
                   <h3 className="text-lg font-black text-slate-900">Confirmar Liquidação</h3>
                 </div>
                 
-                <div className="text-sm text-slate-600 space-y-4 mb-6">
+                <div className="text-sm text-slate-650 space-y-4 mb-6">
                   <p>Está prestes a liquidar a fatura do cartão referente a <strong className="text-slate-900">{paymentModal.label}</strong>.</p>
                   
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 space-y-3">
@@ -2206,7 +2154,7 @@
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Tipo</label>
+                      <label className="block text-[10px] uppercase font-bold text-slate-405 mb-1">Tipo</label>
                       <select 
                         value={editModal.transaction.type}
                         onChange={e => {
@@ -2269,7 +2217,7 @@
               <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all">
                 <div className="flex items-center gap-3 text-indigo-600 mb-4">
                   <Icon name="edit" className="w-8 h-8 shrink-0" />
-                  <h3 className="text-lg font-black text-slate-900">Editar Compra a Crédito</h3>
+                  <h3 className="text-lg font-black text-slate-900">Editar Registo de Crédito</h3>
                 </div>
                 
                 <form onSubmit={handleUpdateCcTransaction} className="space-y-4">
@@ -2298,12 +2246,12 @@
                           ...prev,
                           transaction: { ...prev.transaction, amount: e.target.value }
                         }))}
-                        className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
+                        className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-900"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data da Compra</label>
+                      <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data</label>
                       <input 
                         type="date"
                         value={editCcModal.transaction.date}
@@ -2399,14 +2347,13 @@
                     <Icon name="alertTriangle" className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                     <div className="text-xs text-slate-700 space-y-1.5">
                       <p className="font-bold text-sm text-slate-900">Configuração das Regras do Firestore Pendente</p>
-                      <p>O seu banco de dados do Firebase Cloud Firestore está a recusar acessos externos porque as regras de segurança padrão (<code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900">if false;</code>) estão ativas.</p>
+                      <p>O seu banco de dados do Firebase Cloud Firestore está a recusar acessos externos porque as regras de segurança padrão estão ativas.</p>
                       <p className="font-semibold text-amber-900">Siga estes passos rápidos para resolver:</p>
                       <ol className="list-decimal list-inside space-y-1 text-slate-600 bg-white/70 p-3 rounded-xl border border-amber-200">
                         <li>Inicie sessão no Console do Firebase &gt; Cloud Firestore &gt; guia de <strong>Regras (Rules)</strong>.</li>
                         <li>Clique no botão à direita para copiar o modelo de regras otimizado.</li>
                         <li>Substitua o conteúdo no console do Firebase e clique em <strong>Publicar (Publish)</strong>.</li>
                       </ol>
-                      <p className="text-[10px] text-slate-400 italic pt-1">Até que as regras sejam aplicadas, as suas alterações estão a ser guardadas localmente (localStorage).</p>
                     </div>
                   </div>
 
@@ -2433,7 +2380,6 @@
                   </p>
                   
                   <div className="flex items-center gap-1.5">
-                    {/* Botão Retroceder Mês */}
                     <button
                       onClick={() => navigateMonth('prev')}
                       disabled={selectedMonth === 'all'}
@@ -2447,7 +2393,6 @@
                       <Icon name="chevronLeft" className="w-4 h-4" />
                     </button>
 
-                    {/* Caixa de Seleção Completa */}
                     <select
                       value={selectedMonth}
                       onChange={e => setSelectedMonth(e.target.value)}
@@ -2461,7 +2406,6 @@
                       ))}
                     </select>
 
-                    {/* Botão Avançar Mês */}
                     <button
                       onClick={() => navigateMonth('next')}
                       disabled={selectedMonth === 'all'}
@@ -2475,17 +2419,6 @@
                       <Icon name="chevronRight" className="w-4 h-4" />
                     </button>
                   </div>
-                  
-                  {selectedMonth !== 'all' && (
-                    <div className="mt-2.5 text-center">
-                      <button
-                        onClick={() => setSelectedMonth('all')}
-                        className="text-[10px] text-indigo-600 font-bold hover:underline"
-                      >
-                        Ver todo o histórico acumulado
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 {/* Menu de Navegação */}
@@ -2563,16 +2496,6 @@
                     </button>
                   </nav>
                 </div>
-
-                {/* Bloco de Diagnóstico */}
-                <div className="bg-white rounded-2xl p-4 border border-slate-200 text-xs text-slate-500 space-y-2">
-                  <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                    <Icon name="database" className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Isolamento e Segurança</span>
-                  </div>
-                  <p className="break-all font-mono text-[10px]">Utilizador UID: {user?.uid || 'A carregar...'}</p>
-                  <p className="italic text-[10px]">O seu ID anónimo garante que todas as transações, orçamentos e limites são completamente privados.</p>
-                </div>
               </aside>
 
               {/* Área do Separador Ativo */}
@@ -2582,7 +2505,7 @@
                 {activeTab === 'dashboard' && (
                   <div className="space-y-6">
                     
-                    {/* Quatro Sumários Financeiros (Corrente + Crédito) */}
+                    {/* Quatro Sumários Financeiros */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex items-center justify-between">
                         <div>
@@ -2592,10 +2515,6 @@
                           </p>
                           {stats.balance < 0 ? (
                             <p className="text-[9px] text-rose-500 mt-1 font-bold">⚠️ Em uso do Cheque Especial</p>
-                          ) : stats.pendingExpense > 0 || stats.pendingIncome > 0 ? (
-                            <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-0.5" title="Valores futuros ainda não contabilizados no saldo corrente">
-                              <span>Futuro: +R$ {stats.pendingIncome.toFixed(2)} | -R$ {stats.pendingExpense.toFixed(2)}</span>
-                            </p>
                           ) : (
                             <p className="text-[10px] text-slate-400 mt-1 font-medium">Soma acumulada de contas</p>
                           )}
@@ -2637,7 +2556,7 @@
                           <p className="text-xl font-black text-amber-600">
                             R$ {activeInvoiceTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-1">Valor pendente na fatura</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Valor líquido pendente</p>
                         </div>
                         <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
                           <Icon name="creditCard" className="w-5 h-5" />
@@ -2660,7 +2579,7 @@
                             <p className="text-xs">Não existem despesas liquidadas com vencimento neste período.</p>
                             <button 
                               onClick={handleGenerateMockData}
-                              className="text-xs bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-slate-850"
+                              className="text-xs bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-slate-800"
                             >
                               Carregar Base Demonstrativa
                             </button>
@@ -2693,7 +2612,7 @@
                         )}
                       </div>
 
-                      {/* Notificações do Planeador (Inclui os avisos do Cheque Especial) */}
+                      {/* Notificações do Planeador */}
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
                         <div>
                           <h3 className="font-extrabold text-slate-900 text-base mb-4 flex items-center gap-2">
@@ -2716,10 +2635,6 @@
                               ))
                             )}
                           </div>
-                        </div>
-
-                        <div className="mt-4 pt-4 border-t border-slate-100 text-[10px] text-center text-slate-400">
-                          Dados processados em tempo real de acordo com o vencimento do mês selecionado.
                         </div>
                       </div>
 
@@ -2770,26 +2685,22 @@
                             </div>
                           </div>
 
-                          {/* Renderizar reativamente o Alerta de Cheque Especial no Lançamento */}
+                          {/* Alerta de Cheque Especial no Lançamento */}
                           {overdraftProjectedWarning && (
                             <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-xl text-[11px] text-amber-900 space-y-1">
                               <p className="font-bold flex items-center gap-1 text-xs">
                                 <span>⚠️</span> <span>Uso de Cheque Especial Detetado</span>
                               </p>
                               <p>Esta despesa utilizará <strong className="text-rose-600">R$ {overdraftProjectedWarning.requiredOdf.toFixed(2)}</strong> do limite de cheque especial da conta <strong>{overdraftProjectedWarning.accName}</strong>.</p>
-                              {overdraftProjectedWarning.exceedsLimit ? (
+                              {overdraftProjectedWarning.exceedsLimit && (
                                 <p className="text-[10px] text-rose-600 font-bold leading-tight mt-1">
-                                  🚨 ERRO: O valor excede o limite disponível de cheque especial desta conta (R$ {overdraftProjectedWarning.odfLimit.toFixed(2)}).
-                                </p>
-                              ) : (
-                                <p className="text-[10px] text-amber-700 italic leading-tight mt-1">
-                                  Serão aplicadas taxas de utilização diárias do seu banco caso confirme o lançamento.
+                                  🚨 ERRO: O valor excede o limite disponível de cheque especial.
                                 </p>
                               )}
                             </div>
                           )}
 
-                          {/* LANÇAR DESPESA PARCELADA */}
+                          {/* Lançamento Parcelado */}
                           {newTx.type === 'despesa' && (
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
                               <div className="flex items-center gap-2">
@@ -2801,7 +2712,7 @@
                                   className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 rounded"
                                 />
                                 <label htmlFor="isInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer">
-                                  Dividir em Prestações (Parcelar)
+                                  Dividir em Prestações
                                 </label>
                               </div>
 
@@ -2819,26 +2730,14 @@
                                       ))}
                                     </select>
                                   </div>
-                                  
-                                  {parseFloat(newTx.amount) > 0 && (
-                                    <div className="text-[10px] bg-white p-2.5 rounded-lg border border-slate-100 text-slate-500 leading-normal">
-                                      <p className="font-semibold text-slate-800">Plano de Prestações:</p>
-                                      <ul className="list-disc list-inside space-y-0.5 mt-1">
-                                        <li>Serão gerados {installmentsCount} lançamentos sequenciais.</li>
-                                        <li>Valor aproximado: <strong className="text-emerald-700">R$ {(parseFloat(newTx.amount) / installmentsCount).toFixed(2)} / mês</strong>.</li>
-                                        <li className="italic">O 1º lançamento assume o estado escolhido; os restantes entram como 'Pendente'.</li>
-                                      </ul>
-                                    </div>
-                                  )}
                                 </div>
                               )}
                             </div>
                           )}
 
-                          {/* Campos de data unificados de Registo e Vencimento */}
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Registo / Início</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Registo</label>
                               <input 
                                 type="date"
                                 value={newTx.date}
@@ -2847,7 +2746,7 @@
                               />
                             </div>
                             <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Vencimento 1ª Prest.</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Vencimento</label>
                               <input 
                                 type="date"
                                 value={newTx.dueDate}
@@ -2857,13 +2756,12 @@
                             </div>
                           </div>
 
-                          {/* Selecionar Conta do Lançamento */}
                           <div>
                             <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Conta para Vincular</label>
                             <select 
                               value={newTx.accountId || (accounts[0]?.id || 'default-acc')}
                               onChange={e => setNewTx(prev => ({ ...prev, accountId: e.target.value }))}
-                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-700 font-semibold"
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-755 font-semibold"
                             >
                               {accountsWithBalances.map(acc => {
                                 const totalPower = acc.currentBalance + (parseFloat(acc.overdraftLimit) || 0);
@@ -2888,9 +2786,9 @@
                                     type: nt,
                                     category: nt === 'receita' ? CATEGORIES.receita[0].id : CATEGORIES.despesa[0].id
                                   }));
-                                  setIsInstallment(false); // Reseta parcelamento se mudar para receita
+                                  setIsInstallment(false);
                                 }}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-700"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-705"
                               >
                                 <option value="despesa">🔴 Despesa</option>
                                 <option value="receita">🟢 Receita</option>
@@ -2924,11 +2822,11 @@
                         </form>
                       </div>
 
-                      {/* Lista de transações filtradas por mês com ênfase reativa na Data de Vencimento */}
+                      {/* Lista de transações do mês de referência */}
                       <div className="md:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                         <div className="flex justify-between items-center mb-4">
                           <h3 className="font-extrabold text-slate-900 text-base">Lançamentos Registados</h3>
-                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-600 font-bold hover:underline">
+                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-650 font-bold hover:underline">
                             Ver Extrato Completo
                           </button>
                         </div>
@@ -2937,9 +2835,9 @@
                           <table className="w-full text-left text-xs">
                             <thead>
                               <tr className="border-b border-slate-100 text-slate-400 font-semibold">
-                                <th className="pb-3 text-[10px] uppercase">Descrição / Conta</th>
+                                <th className="pb-3 text-[10px] uppercase">Descrição</th>
                                 <th className="pb-3 text-[10px] uppercase">Estado</th>
-                                <th className="pb-3 text-[10px] uppercase">Vencimento / Registo</th>
+                                <th className="pb-3 text-[10px] uppercase">Vencimento</th>
                                 <th className="pb-3 text-[10px] uppercase text-right">Valor</th>
                                 <th className="pb-3"></th>
                               </tr>
@@ -2966,13 +2864,9 @@
                                     <td className="py-3">
                                       {renderStatusBadge(t.status)}
                                     </td>
-                                    <td className="py-3 text-slate-600 text-[11px] leading-tight">
-                                      {/* MODIFICADO: Exibe Vencimento com prioridade visual */}
+                                    <td className="py-3 text-slate-650 text-[11px] leading-tight">
                                       <div className="font-extrabold text-slate-800">
-                                        📅 Venc: {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
-                                      </div>
-                                      <div className="text-[10px] text-slate-400 mt-0.5">
-                                        Registo: {new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
+                                        📅 {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
                                       </div>
                                     </td>
                                     <td className={`py-3 font-extrabold text-right ${isInc ? 'text-emerald-600' : 'text-slate-800'} ${isPending ? 'opacity-60' : ''}`}>
@@ -2983,20 +2877,20 @@
                                         {isPending && (
                                           <button 
                                             onClick={() => handleClearTransaction(t.id)} 
-                                            className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded"
-                                            title="Liquidar / Efetivar Lançamento"
+                                            className="text-emerald-500 hover:text-emerald-705 p-1 hover:bg-emerald-50 rounded"
+                                            title="Liquidar Lançamento"
                                           >
                                             <Icon name="check" className="w-4 h-4" />
                                           </button>
                                         )}
                                         <button 
                                           onClick={() => openEditModal(t)} 
-                                          className="text-slate-300 hover:text-indigo-650 p-1"
+                                          className="text-slate-300 hover:text-indigo-600 p-1"
                                           title="Editar Lançamento"
                                         >
                                           <Icon name="edit" className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600 p-1">
+                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-650 p-1">
                                           <Icon name="trash" className="w-4 h-4" />
                                         </button>
                                       </div>
@@ -3028,7 +2922,7 @@
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                       <div>
                         <h2 className="text-lg font-black text-slate-900">Extrato Consolidado</h2>
-                        <p className="text-xs text-slate-400">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
+                        <p className="text-xs text-slate-405">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
                       </div>
 
                       <div className="flex flex-wrap gap-2">
@@ -3067,10 +2961,10 @@
                       <table className="w-full text-left text-xs">
                         <thead>
                           <tr className="border-b border-slate-100 text-slate-400 font-semibold">
-                            <th className="pb-3">Descrição / Conta</th>
+                            <th className="pb-3">Descrição</th>
                             <th className="pb-3">Categoria</th>
                             <th className="pb-3">Estado</th>
-                            <th className="pb-3">Vencimento / Registo</th>
+                            <th className="pb-3">Vencimento</th>
                             <th className="pb-3 text-right">Montante</th>
                             <th className="pb-3"></th>
                           </tr>
@@ -3086,7 +2980,7 @@
                             return (
                               <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/10' : ''}`}>
                                 <td className="py-4">
-                                  <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-900'}`}>{t.desc}</div>
+                                  <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-905'}`}>{t.desc}</div>
                                   <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
                                     <span className={`inline-block w-2 h-2 rounded-full ${linkedAcc.color}`}></span>
                                     <span>{linkedAcc.name}</span>
@@ -3101,12 +2995,9 @@
                                 <td className="py-4">
                                   {renderStatusBadge(t.status)}
                                 </td>
-                                <td className="py-4 text-slate-600 text-[11px] leading-tight font-medium">
+                                <td className="py-4 text-slate-600 text-[11px] font-medium">
                                   <div className="font-extrabold text-slate-800">
-                                    📅 Venc: {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
-                                  </div>
-                                  <div className="text-[10px] text-slate-400 mt-0.5">
-                                    Registo: {new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
+                                    📅 {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
                                   </div>
                                 </td>
                                 <td className={`py-4 font-extrabold text-right ${isInc ? 'text-emerald-600' : 'text-slate-800'} ${isPending ? 'opacity-65' : ''}`}>
@@ -3125,7 +3016,7 @@
                                     )}
                                     <button 
                                       onClick={() => openEditModal(t)} 
-                                      className="text-slate-400 hover:text-indigo-655 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                                      className="text-slate-400 hover:text-indigo-650 p-1.5 hover:bg-slate-100 rounded-lg transition"
                                       title="Editar Lançamento"
                                     >
                                       <Icon name="edit" className="w-4 h-4" />
@@ -3148,7 +3039,6 @@
                 {activeTab === 'accounts' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     
-                    {/* Painel Esquerdo: Formulário de Nova Conta */}
                     <div className="md:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 h-fit">
                       <h3 className="font-extrabold text-slate-900 text-sm mb-4">Adicionar Nova Conta</h3>
                       <form onSubmit={handleCreateAccount} className="space-y-4">
@@ -3156,7 +3046,7 @@
                           <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Nome da Conta</label>
                           <input 
                             type="text" 
-                            placeholder="Ex: ActivoBank, Carteira, Poupança"
+                            placeholder="Ex: ActivoBank, Carteira"
                             value={newAccount.name}
                             onChange={e => setNewAccount(prev => ({ ...prev, name: e.target.value }))}
                             className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
@@ -3174,7 +3064,7 @@
                             >
                               <option value="corrente">💳 Corrente</option>
                               <option value="poupança">📈 Poupança</option>
-                              <option value="carteira">💵 Dinheiro / Carteira</option>
+                              <option value="carteira">💵 Dinheiro</option>
                             </select>
                           </div>
 
@@ -3191,7 +3081,6 @@
                           </div>
                         </div>
 
-                        {/* Limite do Cheque Especial na criação de Contas */}
                         <div>
                           <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Limite do Cheque Especial (R$)</label>
                           <input 
@@ -3205,7 +3094,7 @@
                         </div>
 
                         <div>
-                          <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Cor de Identificação</label>
+                          <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Cor</label>
                           <select 
                             value={newAccount.color}
                             onChange={e => setNewAccount(prev => ({ ...prev, color: e.target.value }))}
@@ -3220,13 +3109,12 @@
                           </select>
                         </div>
 
-                        <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-855 transition">
+                        <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-800 transition">
                           Criar Conta Bancária
                         </button>
                       </form>
                     </div>
 
-                    {/* Painel Direito: Listagem de Contas Existentes com Alerta do Cheque Especial */}
                     <div className="md:col-span-8 bg-white rounded-3xl p-6 border border-slate-200 space-y-4">
                       <div>
                         <h2 className="font-extrabold text-slate-900 text-lg">As Suas Contas Bancárias</h2>
@@ -3237,8 +3125,6 @@
                         {accountsWithBalances.map(acc => {
                           const isNegative = acc.currentBalance < 0;
                           const overdraftLimit = parseFloat(acc.overdraftLimit) || 0;
-                          
-                          // Cálculo do uso percentual do cheque especial
                           const usedOverdraft = isNegative ? Math.abs(acc.currentBalance) : 0;
                           const overdraftPercentage = overdraftLimit > 0 ? (usedOverdraft / overdraftLimit) * 100 : 0;
 
@@ -3251,18 +3137,17 @@
                                   <span className={`inline-block w-3.5 h-3.5 rounded-full ${acc.color} shadow-sm`}></span>
                                   <div>
                                     <h4 className="font-black text-slate-900 text-sm">{acc.name}</h4>
-                                    <span className="text-[10px] text-slate-400 font-bold uppercase">
-                                      {acc.type === 'corrente' ? '💳 Conta Corrente' : acc.type === 'poupança' ? '📈 Poupança' : '💵 Dinheiro / Carteira'}
+                                    <span className="text-[10px] text-slate-405 font-bold uppercase">
+                                      {acc.type === 'corrente' ? '💳 Conta Corrente' : acc.type === 'poupança' ? '📈 Poupança' : '💵 Dinheiro'}
                                     </span>
                                   </div>
                                 </div>
 
                                 <div className="flex items-center gap-1.5">
-                                  {/* Botão de Edição de Conta */}
                                   <button 
                                     onClick={() => setEditAccountModal({ isOpen: true, account: acc })}
-                                    className="text-slate-400 hover:text-indigo-650 transition p-1 hover:bg-slate-100 rounded-lg"
-                                    title="Editar Conta / Limite"
+                                    className="text-slate-400 hover:text-indigo-600 transition p-1 hover:bg-slate-100 rounded-lg"
+                                    title="Editar Conta"
                                   >
                                     <Icon name="edit" className="w-4 h-4" />
                                   </button>
@@ -3284,15 +3169,11 @@
                                 <p className={`text-xl font-black ${isNegative ? 'text-rose-600' : 'text-slate-900'}`}>
                                   R$ {acc.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                 </p>
-                                <span className="text-[9px] text-slate-400 italic">
-                                  (Inicial: R$ {(parseFloat(acc.initialBalance) || 0).toFixed(2)})
-                                </span>
                               </div>
 
-                              {/* Renderizar informações do Cheque Especial na visualização do card de Conta */}
                               <div className="border-t border-slate-200/40 pt-2.5 space-y-1.5">
-                                <div className="flex justify-between text-[10px] text-slate-500 font-bold">
-                                  <span>Limite do Cheque Especial:</span>
+                                <div className="flex justify-between text-[10px] text-slate-505 font-bold">
+                                  <span>Limite Cheque Especial:</span>
                                   <span className="text-slate-700">R$ {overdraftLimit.toFixed(2)}</span>
                                 </div>
                                 
@@ -3305,9 +3186,6 @@
                                     <div className="w-full bg-rose-100 rounded-full h-1.5 overflow-hidden">
                                       <div className="h-1.5 rounded-full bg-rose-500" style={{ width: `${Math.min(100, overdraftPercentage)}%` }}></div>
                                     </div>
-                                    <p className="text-[9px] text-rose-700 italic leading-tight pt-1">
-                                      Está a utilizar R$ {usedOverdraft.toFixed(2)} do limite de crédito emergencial desta conta.
-                                    </p>
                                   </div>
                                 )}
                               </div>
@@ -3321,7 +3199,7 @@
                   </div>
                 )}
 
-                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO (TOTALMENTE OTIMIZADO COM PROGRESSO E LISTAGEM DE COMPRAS) */}
+                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO (OTIMIZADO COM REGISTO DE CRÉDITO VISÍVEL) */}
                 {activeTab === 'credit-card' && (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
@@ -3345,7 +3223,7 @@
                           <div className="grid grid-cols-2 gap-4 my-4">
                             <div>
                               <p className="text-[10px] text-slate-400 uppercase">Limite Disponível (Liberado)</p>
-                              <p className="text-xl font-extrabold text-emerald-400">
+                              <p className="text-xl font-extrabold text-emerald-400 animate-pulse">
                                 R$ {availableCcLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                               </p>
                             </div>
@@ -3396,19 +3274,19 @@
                           <button 
                             type="button"
                             onClick={openPrepaymentModal}
-                            disabled={totalUnpaidCcAmount === 0}
+                            disabled={totalUnpaidCcAmount <= 0}
                             className={`w-full sm:w-auto text-white text-[11px] font-bold px-4 py-3 rounded-xl transition shadow flex items-center justify-center gap-1.5 ${
-                              totalUnpaidCcAmount === 0 
+                              totalUnpaidCcAmount <= 0 
                                 ? 'bg-slate-300 cursor-not-allowed text-slate-500' 
                                 : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow-lg'
                             }`}
                           >
-                            <span>💰 Adiantar Pagamento do Cartão (Subir Limite)</span>
+                            <span>💰 Adiantar Pagamento (Adicionar Crédito de r$100,00 ou mais)</span>
                           </button>
                         </div>
                       </div>
 
-                      {/* Configuração Básica */}
+                      {/* Ajustes do Cartão */}
                       <div className="md:col-span-5 bg-white rounded-3xl p-5 border border-slate-200 flex flex-col justify-between">
                         <div>
                           <h3 className="font-extrabold text-slate-900 text-sm mb-3 flex items-center gap-2">
@@ -3471,7 +3349,7 @@
                       </div>
                     </div>
 
-                    {/* Formulário de Compra e Listagem Dinâmica */}
+                    {/* Lançamento e Faturas Mensais */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                       
                       <div className="md:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 h-fit">
@@ -3516,7 +3394,6 @@
                               <p className="font-bold flex items-center gap-1">
                                 <span>⚠️</span> <span>Limite do Cartão Excedido</span>
                               </p>
-                              <p>Esta compra ultrapassa o limite disponível do seu cartão.</p>
                             </div>
                           )}
                           <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
@@ -3535,7 +3412,7 @@
                             {isCcInstallment && (
                               <div className="space-y-2 pt-1">
                                 <div className="flex items-center gap-3">
-                                  <span className="text-xs text-slate-500 shrink-0">Parcelas:</span>
+                                  <span className="text-xs text-slate-505 shrink-0">Parcelas:</span>
                                   <select 
                                     value={ccInstallmentsCount}
                                     onChange={e => setCcInstallmentsCount(parseInt(e.target.value))}
@@ -3567,7 +3444,7 @@
                         </form>
                       </div>
 
-                      {/* MODIFICADO: Exibição Completa e Otimizada de Compras diretamente em cada Fatura Mensal */}
+                      {/* Exibição Completa de Faturas com Crédito Lançado */}
                       <div className="md:col-span-8 space-y-4">
                         <div className="flex items-center justify-between">
                           <h3 className="font-extrabold text-slate-900 text-base">Faturas por Ciclo Mensal</h3>
@@ -3577,7 +3454,6 @@
                           <div className="bg-white rounded-3xl p-12 text-center text-slate-400 border border-slate-100">
                             <Icon name="creditCard" className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                             <p className="text-xs font-semibold">Não existem faturas criadas ou compras a crédito.</p>
-                            <p className="text-[10px] text-slate-400 mt-1">Insira uma compra para gerar o histórico de faturamento.</p>
                           </div>
                         ) : (
                           Object.keys(groupedInvoices)
@@ -3595,55 +3471,55 @@
                                         <span className="text-lg">📅</span>
                                         <span>Fatura de {invoice.label}</span>
                                       </h4>
-                                      <p className="text-[10px] text-slate-400">Total acumulado neste ciclo: R$ {invoice.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                      <p className="text-[10px] text-slate-400">Total original de compras: R$ {invoice.transactions.filter(t => !t.isCredit).reduce((sum, t) => sum + parseFloat(t.amount), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                                     </div>
                                     <div className="flex items-center gap-3">
                                       <div className="text-right">
-                                        <p className="text-[9px] uppercase font-bold text-slate-400">Resta Pagar / Em Aberto</p>
+                                        <p className="text-[9px] uppercase font-bold text-slate-400">Total a Pagar (Líquido)</p>
                                         <p className="font-black text-slate-900 text-base">
                                           R$ {invoice.unpaidTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </p>
                                       </div>
                                       
                                       {invoice.isPaid ? (
-                                        <span className="bg-emerald-55 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
-                                          ✓ Totalmente Paga
-                                        </span>
-                                      ) : invoice.unpaidTotal < invoice.total ? (
-                                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
-                                          💡 Amortizada (Parcial)
+                                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
+                                          ✓ Paga
                                         </span>
                                       ) : (
-                                        <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 animate-pulse">
+                                        <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
                                           ⏳ Aberta
                                         </span>
                                       )}
                                     </div>
                                   </div>
 
-                                  {/* NOVA SECÇÃO: COMPRAS INTEGRADAS NA FATURA DESTE MÊS */}
+                                  {/* Compras e Crédito associados à fatura */}
                                   <div className="space-y-2">
                                     <h5 className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mb-2">
-                                      Compras Associadas a esta Fatura:
+                                      Lançamentos da Fatura:
                                     </h5>
                                     
                                     <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden bg-slate-50/50">
                                       {invoice.transactions.map(item => {
+                                        const isCreditItem = item.isCredit || parseFloat(item.amount) < 0;
                                         const catObj = CATEGORIES.despesa.find(c => c.id === item.category) || { name: 'Geral', icon: '🛒' };
+                                        
                                         return (
-                                          <div key={item.id} className="py-3 px-4 flex items-center justify-between text-xs hover:bg-slate-50 transition">
+                                          <div key={item.id} className={`py-3 px-4 flex items-center justify-between text-xs hover:bg-slate-50 transition ${isCreditItem ? 'bg-emerald-50/30' : ''}`}>
                                             
-                                            {/* Detalhes da Compra */}
+                                            {/* Detalhes do Lançamento */}
                                             <div className="flex items-center gap-3">
-                                              <span className="text-base p-1.5 bg-white rounded-xl shadow-sm border border-slate-100">{catObj.icon}</span>
+                                              <span className="text-base p-1.5 bg-white rounded-xl shadow-sm border border-slate-100">
+                                                {isCreditItem ? '💰' : catObj.icon}
+                                              </span>
                                               <div>
-                                                <p className={`font-semibold ${item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
+                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-800 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
                                                   {item.desc}
                                                 </p>
                                                 <p className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
-                                                  <span>{catObj.name}</span>
+                                                  <span>{isCreditItem ? 'Crédito Adiantado' : catObj.name}</span>
                                                   <span>•</span>
-                                                  <span>Comprado em: {new Date(item.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</span>
+                                                  <span>{new Date(item.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</span>
                                                 </p>
                                               </div>
                                             </div>
@@ -3651,12 +3527,16 @@
                                             {/* Preço e Estado */}
                                             <div className="flex items-center gap-3">
                                               <div className="text-right">
-                                                <p className={`font-bold font-mono ${item.paid ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-                                                  R$ {parseFloat(item.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                <p className={`font-bold font-mono ${isCreditItem ? 'text-emerald-600' : item.paid ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                                                  {isCreditItem ? '-' : ''} R$ {Math.abs(parseFloat(item.amount)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 </p>
-                                                {item.paid ? (
-                                                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
-                                                    Adiantada / Paga
+                                                {isCreditItem ? (
+                                                  <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
+                                                    Crédito Lançado
+                                                  </span>
+                                                ) : item.paid ? (
+                                                  <span className="bg-slate-100 text-slate-500 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
+                                                    Pago
                                                   </span>
                                                 ) : (
                                                   <span className="bg-amber-50 text-amber-700 border border-amber-100 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
@@ -3665,19 +3545,19 @@
                                                 )}
                                               </div>
 
-                                              {/* Ações da Compra */}
+                                              {/* Ações */}
                                               <div className="flex items-center gap-1 border-l border-slate-200/80 pl-2">
                                                 <button 
                                                   onClick={() => openEditCcModal(item)}
                                                   className="text-slate-300 hover:text-indigo-650 transition p-1 hover:bg-white rounded-lg"
-                                                  title="Editar Compra"
+                                                  title="Editar"
                                                 >
                                                   <Icon name="edit" className="w-3.5 h-3.5" />
                                                 </button>
                                                 <button 
                                                   onClick={() => handleDeleteCcTransaction(item.id)}
                                                   className="text-slate-300 hover:text-rose-600 transition p-1 hover:bg-white rounded-lg"
-                                                  title="Excluir Compra"
+                                                  title="Excluir"
                                                 >
                                                   <Icon name="trash" className="w-3.5 h-3.5" />
                                                 </button>
@@ -3689,12 +3569,6 @@
                                       })}
                                     </div>
                                     
-                                    {invoice.total > invoice.unpaidTotal && (
-                                      <div className="text-right text-[10px] text-emerald-600 font-bold italic pt-1 flex items-center justify-end gap-1">
-                                        <span>💡 Poupança:</span>
-                                        <span>Já adiantou R$ {(invoice.total - invoice.unpaidTotal).toFixed(2)} e liberou este limite de volta para o seu cartão!</span>
-                                      </div>
-                                    )}
                                   </div>
 
                                   {/* Botão de pagamento de fatura restante */}
@@ -3704,7 +3578,7 @@
                                         onClick={() => setPaymentModal({ isOpen: true, invoiceKey: key, label: invoice.label, total: invoice.unpaidTotal, accountId: '' })}
                                         className="text-[11px] bg-slate-900 hover:bg-slate-800 text-white font-extrabold px-4 py-2.5 rounded-xl transition shadow"
                                       >
-                                        💳 Liquidar Fatura Restante
+                                        💳 Liquidar Saldo da Fatura
                                       </button>
                                     </div>
                                   )}
@@ -3719,7 +3593,7 @@
                   </div>
                 )}
 
-                {/* 5. SEPARADOR: LIMITES DE ORÇAMENTO (TOTALMENTE POPULADO) */}
+                {/* 5. SEPARADOR: LIMITES DE ORÇAMENTO */}
                 {activeTab === 'budgets' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     
@@ -3776,18 +3650,18 @@
                                 <span className="font-bold text-slate-800 flex items-center gap-1.5">
                                   <span>{cat.icon}</span> <span>{cat.name}</span>
                                 </span>
-                                <span className="font-semibold text-slate-500">
+                                <span className="font-semibold text-slate-505">
                                   {limit > 0 ? (
-                                    <>Spent: <strong className="text-slate-800 font-mono">R$ {spent.toFixed(2)}</strong> / Limite: R$ {limit.toFixed(2)}</>
+                                    <>Gasto: <strong className="text-slate-800 font-mono">R$ {spent.toFixed(2)}</strong> / Limite: R$ {limit.toFixed(2)}</>
                                   ) : (
-                                    <>Spent: <strong className="text-slate-800 font-mono">R$ {spent.toFixed(2)}</strong> (Sem limite fixado)</>
+                                    <>Gasto: <strong className="text-slate-800 font-mono">R$ {spent.toFixed(2)}</strong> (Sem limite definido)</>
                                   )}
                                 </span>
                               </div>
                               
                               {limit > 0 && (
                                 <div className="space-y-1">
-                                  <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                                  <div className="w-full bg-slate-250 rounded-full h-2.5 overflow-hidden">
                                     <div 
                                       className={`h-full rounded-full transition-all duration-300 ${percent > 100 ? 'bg-rose-500' : percent > 80 ? 'bg-amber-500' : 'bg-indigo-600'}`}
                                       style={{ width: `${Math.min(100, percent)}%` }}
@@ -3798,7 +3672,7 @@
                                       {percent.toFixed(0)}% Utilizado
                                     </span>
                                     {percent > 100 && (
-                                      <span className="text-rose-600 animate-pulse">🚨 Teto Máximo Ultrapassado!</span>
+                                      <span className="text-rose-600 animate-pulse">🚨 Orçamento Estourado!</span>
                                     )}
                                   </div>
                                 </div>
@@ -3812,11 +3686,10 @@
                   </div>
                 )}
 
-                {/* 6. SEPARADOR: METAS DE POUPANÇA (TOTALMENTE POPULADO) */}
+                {/* 6. SEPARADOR: METAS DE POUPANÇA */}
                 {activeTab === 'goals' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     
-                    {/* Formulários e Ações */}
                     <div className="md:col-span-4 flex flex-col gap-6">
                       
                       {/* Criar Meta */}
@@ -3827,7 +3700,7 @@
                             <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Nome do Objetivo</label>
                             <input 
                               type="text" 
-                              placeholder="Ex: Viagem, Fundo de Emergência"
+                              placeholder="Ex: Viagem, Carro"
                               value={newGoal.name}
                               onChange={e => setNewGoal(prev => ({ ...prev, name: e.target.value }))}
                               className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
@@ -3860,7 +3733,7 @@
                           </div>
 
                           <div>
-                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Prazo</label>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Data Limite</label>
                             <input 
                               type="date"
                               value={newGoal.deadline}
@@ -3876,24 +3749,24 @@
                       {/* Depositar em Meta */}
                       {goals.length > 0 && (
                         <div className="bg-white rounded-2xl p-5 border border-slate-200">
-                          <h3 className="font-extrabold text-slate-900 text-base mb-4">Reforçar Objetivo</h3>
+                          <h3 className="font-extrabold text-slate-900 text-base mb-4">Aporte Financeiro</h3>
                           <form onSubmit={handleGoalDeposit} className="space-y-3">
                             <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Selecione o Objetivo</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Escolher Meta</label>
                               <select 
                                 value={goalDeposit.goalId}
                                 onChange={e => setGoalDeposit(prev => ({ ...prev, goalId: e.target.value }))}
                                 className="w-full text-xs rounded-xl border border-slate-200 py-2.5 bg-white text-slate-700 font-semibold"
                                 required
                               >
-                                <option value="">Escolher meta...</option>
+                                <option value="">Escolha...</option>
                                 {goals.map(g => (
                                   <option key={g.id} value={g.id}>{g.name}</option>
                                 ))}
                               </select>
                             </div>
                             <div>
-                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Valor do Aporte (R$)</label>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Valor do Depósito (R$)</label>
                               <input 
                                 type="number" 
                                 step="0.01"
@@ -3904,8 +3777,8 @@
                                 required
                               />
                             </div>
-                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition">
-                              Realizar Depósito
+                            <button type="submit" className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm">
+                              Depositar na Meta
                             </button>
                           </form>
                         </div>
@@ -3913,11 +3786,10 @@
 
                     </div>
 
-                    {/* Listagem com Progresso */}
                     <div className="md:col-span-8 bg-white rounded-3xl p-6 border border-slate-200 space-y-4 h-fit">
                       <div>
                         <h2 className="font-extrabold text-slate-900 text-lg">Acompanhamento das Suas Metas</h2>
-                        <p className="text-xs text-slate-400">Poupe mensalmente e realize os seus sonhos com registos isolados e privados.</p>
+                        <p className="text-xs text-slate-400">Poupe com consistência para realizar os seus maiores planos.</p>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3927,7 +3799,7 @@
                           const percent = Math.min(100, (currentVal / targetVal) * 100);
 
                           return (
-                            <div key={g.id} className="p-5 border border-slate-100 bg-slate-50/50 rounded-2xl flex flex-col justify-between space-y-3 relative hover:shadow transition">
+                            <div key={g.id} className="p-5 border border-slate-100 bg-slate-50/50 rounded-2xl flex flex-col justify-between space-y-3 hover:shadow transition">
                               <div className="flex justify-between items-start">
                                 <div>
                                   <h4 className="font-black text-slate-900 text-sm">{g.name}</h4>
@@ -3939,12 +3811,12 @@
                               </div>
 
                               <div className="space-y-1 pt-1">
-                                <div className="flex justify-between text-[10px] font-bold text-slate-500">
-                                  <span>Acumulado: <strong className="text-slate-900">R$ {currentVal.toFixed(2)}</strong></span>
+                                <div className="flex justify-between text-[10px] font-bold text-slate-505">
+                                  <span>Guardado: <strong className="text-slate-900">R$ {currentVal.toFixed(2)}</strong></span>
                                   <span>Meta: R$ {targetVal.toFixed(2)}</span>
                                 </div>
                                 <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                                  <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${percent}%` }}></div>
+                                  <div className="h-full bg-emerald-550 bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${percent}%` }}></div>
                                 </div>
                                 <div className="text-right text-[9px] font-extrabold text-emerald-600">{percent.toFixed(0)}% Concluído</div>
                               </div>
@@ -3955,7 +3827,7 @@
                         {goals.length === 0 && (
                           <div className="sm:col-span-2 py-12 text-center text-slate-400 italic">
                             <Icon name="piggyBank" className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                            <span>Ainda não possui metas de poupança registadas neste perfil.</span>
+                            <span>Não possui metas de poupança no momento.</span>
                           </div>
                         )}
                       </div>
@@ -3964,12 +3836,12 @@
                   </div>
                 )}
 
-                {/* 7. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS (TOTALMENTE POPULADO) */}
+                {/* 7. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
                 {activeTab === 'simulator' && (
                   <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-6">
                     <div>
                       <h2 className="font-extrabold text-slate-900 text-lg">Simulador de Juros Compostos</h2>
-                      <p className="text-xs text-slate-400">Planeie os seus investimentos futuros e perceba o efeito multiplicador do tempo.</p>
+                      <p className="text-xs text-slate-400">Projete os seus investimentos e compare o efeito multiplicador dos juros no tempo.</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -3979,7 +3851,7 @@
                           type="number" 
                           value={simInitial}
                           onChange={e => setSimInitial(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-850"
                         />
                       </div>
                       <div className="space-y-1">
@@ -3988,7 +3860,7 @@
                           type="number" 
                           value={simMonthly}
                           onChange={e => setSimMonthly(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-850"
                         />
                       </div>
                       <div className="space-y-1">
@@ -3998,7 +3870,7 @@
                           step="0.1"
                           value={simRate}
                           onChange={e => setSimRate(parseFloat(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-850"
                         />
                       </div>
                       <div className="space-y-1">
@@ -4007,36 +3879,34 @@
                           type="number" 
                           value={simYears}
                           onChange={e => setSimYears(parseInt(e.target.value) || 0)}
-                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-800"
+                          className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold text-slate-850"
                         />
                       </div>
                     </div>
 
-                    {/* Resultados Rápidos */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-5">
                       <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                         <p className="text-[10px] text-slate-400 font-bold uppercase">Total Acumulado Bruto</p>
-                        <p className="text-xl font-black text-slate-900">R$ {investmentSimulation.finalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-xl font-black text-slate-905">R$ {investmentSimulation.finalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                       </div>
                       <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                         <p className="text-[10px] text-slate-400 font-bold uppercase">Total Próprio Investido</p>
-                        <p className="text-xl font-black text-slate-700 font-medium">R$ {investmentSimulation.totalInvested.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-xl font-black text-slate-700">R$ {investmentSimulation.totalInvested.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                       </div>
-                      <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
-                        <p className="text-[10px] text-emerald-800 font-bold uppercase">Total Ganho em Juros</p>
+                      <div className="p-4 bg-emerald-550 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                        <p className="text-[10px] text-emerald-805 font-bold uppercase">Total Ganho em Juros</p>
                         <p className="text-xl font-black text-emerald-700">R$ {investmentSimulation.totalGains.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                       </div>
                     </div>
 
-                    {/* Histórico Temporal da Evolução */}
                     <div className="overflow-x-auto pt-2">
                       <table className="w-full text-left text-xs">
                         <thead>
                           <tr className="border-b border-slate-150 text-slate-400 font-bold">
                             <th className="pb-2">Tempo decorrido</th>
                             <th className="pb-2">Montante Próprio</th>
-                            <th className="pb-2">Lucro Obtido (Juros)</th>
-                            <th className="pb-2 text-right font-bold">Montante Total</th>
+                            <th className="pb-2">Lucro Bruto (Juros)</th>
+                            <th className="pb-2 text-right">Montante Total</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -4044,7 +3914,7 @@
                             <tr key={row.year} className="hover:bg-slate-50/50">
                               <td className="py-2.5 font-bold text-slate-700">{row.year} {row.year === 1 ? 'Ano' : 'Anos'}</td>
                               <td className="py-2.5 text-slate-600">R$ {row.invested.toLocaleString()}</td>
-                              <td className="py-2.5 text-emerald-600 font-medium">+ R$ {row.gains.toLocaleString()}</td>
+                              <td className="py-2.5 text-emerald-650 font-medium">+ R$ {row.gains.toLocaleString()}</td>
                               <td className="py-2.5 text-right font-extrabold text-slate-900">R$ {row.total.toLocaleString()}</td>
                             </tr>
                           ))}
