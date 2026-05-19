@@ -133,7 +133,8 @@
         copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>,
         check: <polyline points="20 6 9 17 4 12"/>,
         creditCard: <><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M4 16h4"/></>,
-        settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>
+        settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+        bank: <><rect x="3" y="21" width="18" height="2"/><rect x="5" y="10" width="2" height="11"/><rect x="11" y="10" width="2" height="11"/><rect x="17" y="10" width="2" height="11"/><polygon points="12 2 2 9 22 9 12 2"/></>
       };
 
       return (
@@ -167,6 +168,9 @@
       const [budgets, setBudgets] = useState(DEFAULT_BUDGETS);
       const [goals, setGoals] = useState([]);
 
+      // Dados de Contas Correntes Registadas
+      const [accounts, setAccounts] = useState([]);
+
       // Dados do Sistema de Cartão de Crédito Sincronizados
       const [ccSettings, setCcSettings] = useState(DEFAULT_CC_SETTINGS);
       const [ccTransactions, setCcTransactions] = useState([]);
@@ -174,15 +178,27 @@
       // Estados de UI e Navegação
       const [activeTab, setActiveTab] = useState('dashboard');
       const [notification, setNotification] = useState(null);
-      const [paymentModal, setPaymentModal] = useState({ isOpen: false, invoiceKey: null, label: '', total: 0 });
+      const [paymentModal, setPaymentModal] = useState({ isOpen: false, invoiceKey: null, label: '', total: 0, accountId: '' });
 
       // Formulários e Estados Interativos
-      const [newTx, setNewTx] = useState({ desc: '', amount: '', type: 'despesa', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
+      // Novo campo no formulário: 'status' (pode ser 'liquidado' ou 'pendente')
+      const [newTx, setNewTx] = useState({ 
+        desc: '', 
+        amount: '', 
+        type: 'despesa', 
+        category: 'alimentacao', 
+        date: new Date().toISOString().split('T')[0], 
+        accountId: '',
+        status: 'liquidado' 
+      });
       const [newCcTx, setNewCcTx] = useState({ desc: '', amount: '', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
       const [goalDeposit, setGoalDeposit] = useState({ goalId: '', amount: '' });
       const [newGoal, setNewGoal] = useState({ name: '', target: '', current: '', deadline: '' });
       const [budgetForm, setBudgetForm] = useState({ category: 'alimentacao', amount: '' });
       const [ccSettingsForm, setCcSettingsForm] = useState({ limit: '', closingDay: '', dueDay: '' });
+      
+      // Formulário de Nova Conta Bancária
+      const [newAccount, setNewAccount] = useState({ name: '', type: 'corrente', initialBalance: '', color: 'bg-blue-600' });
 
       // Estados do Simulador de Juros Compostos
       const [simInitial, setSimInitial] = useState(5000);
@@ -194,6 +210,7 @@
       const [searchQuery, setSearchQuery] = useState('');
       const [filterType, setFilterType] = useState('all');
       const [filterCategory, setFilterCategory] = useState('all');
+      const [filterStatus, setFilterStatus] = useState('all'); // 'all' | 'liquidado' | 'pendente'
 
       const triggerNotification = (message, type = 'success') => {
         setNotification({ message, type });
@@ -237,24 +254,27 @@
           const localGoals = localStorage.getItem('finpro_goals');
           const localCcSettings = localStorage.getItem('finpro_cc_settings');
           const localCcTx = localStorage.getItem('finpro_cc_transactions');
+          const localAccounts = localStorage.getItem('finpro_accounts');
           
           if (localTx) setTransactions(JSON.parse(localTx));
           if (localBudgets) setBudgets(JSON.parse(localBudgets));
           if (localGoals) setGoals(JSON.parse(localGoals));
           if (localCcSettings) setCcSettings(JSON.parse(localCcSettings));
           if (localCcTx) setCcTransactions(JSON.parse(localCcTx));
+          if (localAccounts) setAccounts(JSON.parse(localAccounts));
         } catch (e) {
           console.error("Erro ao carregar do armazenamento local:", e);
         }
       };
 
-      const saveToLocalStorage = (txs, budg, gls, ccSet, ccTx) => {
+      const saveToLocalStorage = (txs, budg, gls, ccSet, ccTx, accs) => {
         try {
           if (txs) localStorage.setItem('finpro_transactions', JSON.stringify(txs));
           if (budg) localStorage.setItem('finpro_budgets', JSON.stringify(budg));
           if (gls) localStorage.setItem('finpro_goals', JSON.stringify(gls));
           if (ccSet) localStorage.setItem('finpro_cc_settings', JSON.stringify(ccSet));
           if (ccTx) localStorage.setItem('finpro_cc_transactions', JSON.stringify(ccTx));
+          if (accs) localStorage.setItem('finpro_accounts', JSON.stringify(accs));
         } catch (e) {
           console.error("Erro ao gravar dados localmente:", e);
         }
@@ -293,6 +313,15 @@
         return () => unsubscribe();
       }, []);
 
+      // Criar conta padrão se nenhuma existir (Garante resiliência)
+      useEffect(() => {
+        if (!loading && accounts.length === 0) {
+          const defaultAcc = [{ id: 'default-acc', name: 'Conta Principal', type: 'corrente', initialBalance: 0, color: 'bg-blue-600', createdAt: new Date().toISOString() }];
+          setAccounts(defaultAcc);
+          saveToLocalStorage(null, null, null, null, null, defaultAcc);
+        }
+      }, [accounts, loading]);
+
       // ---------------------------------------------------------
       // 2. SINCRONIZAÇÃO EM TEMPO REAL COM FIREBASE (REGRA 1, 3)
       // ---------------------------------------------------------
@@ -308,6 +337,7 @@
         const budgetsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', 'limits');
         const ccSettingsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditCard', 'settings');
         const ccTxCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions');
+        const accountsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'accounts');
 
         let active = true;
 
@@ -320,6 +350,20 @@
           }
         };
 
+        // Contas Bancárias
+        const unsubAccounts = onSnapshot(accountsCollectionRef, 
+          (snapshot) => {
+            if (!active) return;
+            const accountsList = [];
+            snapshot.forEach(docSnap => {
+              accountsList.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            setAccounts(accountsList);
+            saveToLocalStorage(null, null, null, null, null, accountsList);
+          },
+          (err) => handlePermissionError(err, 'contas bancárias')
+        );
+
         // Transações de Caixa
         const unsubTx = onSnapshot(txCollectionRef, 
           (snapshot) => {
@@ -330,7 +374,7 @@
             });
             txList.sort((a, b) => new Date(b.date) - new Date(a.date));
             setTransactions(txList);
-            saveToLocalStorage(txList, null, null, null, null);
+            saveToLocalStorage(txList, null, null, null, null, null);
             setDbStatus('synced');
             setLoading(false);
           },
@@ -346,7 +390,7 @@
               goalsList.push({ id: docSnap.id, ...docSnap.data() });
             });
             setGoals(goalsList);
-            saveToLocalStorage(null, null, goalsList, null, null);
+            saveToLocalStorage(null, null, goalsList, null, null, null);
           },
           (err) => handlePermissionError(err, 'metas')
         );
@@ -358,11 +402,11 @@
             if (docSnap.exists()) {
               const data = docSnap.data();
               setBudgets(data);
-              saveToLocalStorage(null, data, null, null, null);
+              saveToLocalStorage(null, data, null, null, null, null);
             } else {
               setDoc(budgetsDocRef, DEFAULT_BUDGETS).catch(() => {});
               setBudgets(DEFAULT_BUDGETS);
-              saveToLocalStorage(null, DEFAULT_BUDGETS, null, null, null);
+              saveToLocalStorage(null, DEFAULT_BUDGETS, null, null, null, null);
             }
           },
           (err) => handlePermissionError(err, 'orçamentos')
@@ -375,11 +419,11 @@
             if (docSnap.exists()) {
               const data = docSnap.data();
               setCcSettings(data);
-              saveToLocalStorage(null, null, null, data, null);
+              saveToLocalStorage(null, null, null, data, null, null);
             } else {
               setDoc(ccSettingsDocRef, DEFAULT_CC_SETTINGS).catch(() => {});
               setCcSettings(DEFAULT_CC_SETTINGS);
-              saveToLocalStorage(null, null, null, DEFAULT_CC_SETTINGS, null);
+              saveToLocalStorage(null, null, null, DEFAULT_CC_SETTINGS, null, null);
             }
           },
           (err) => handlePermissionError(err, 'definições de cartão')
@@ -395,7 +439,7 @@
             });
             ccTxList.sort((a, b) => new Date(b.date) - new Date(a.date));
             setCcTransactions(ccTxList);
-            saveToLocalStorage(null, null, null, null, ccTxList);
+            saveToLocalStorage(null, null, null, null, ccTxList, null);
           },
           (err) => handlePermissionError(err, 'movimentos de cartão')
         );
@@ -407,6 +451,7 @@
           unsubBudgets();
           unsubCcSettings();
           unsubCcTx();
+          unsubAccounts();
         };
       }, [user]);
 
@@ -414,7 +459,83 @@
       // 3. OPERAÇÕES DE GRAVAÇÃO (ESCRITAS COM COMPATIBILIDADE LOCAL)
       // ---------------------------------------------------------
 
-      // Adicionar Transação de Caixa
+      // Adicionar Nova Conta Bancária (Novo)
+      const handleCreateAccount = async (e) => {
+        e.preventDefault();
+        const initial = parseFloat(newAccount.initialBalance) || 0;
+        if (!newAccount.name.trim()) {
+          triggerNotification('O nome da conta é obrigatório.', 'error');
+          return;
+        }
+
+        const accData = {
+          name: newAccount.name.trim(),
+          type: newAccount.type,
+          initialBalance: initial,
+          color: newAccount.color,
+          createdAt: new Date().toISOString()
+        };
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const accountsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'accounts');
+            await addDoc(accountsCollectionRef, accData);
+            triggerNotification('Conta bancária registada na nuvem!');
+          } catch (err) {
+            console.error("Erro ao guardar conta na nuvem, usando local:", err);
+            saveAccountLocally(accData);
+          }
+        } else {
+          saveAccountLocally(accData);
+        }
+
+        setNewAccount({ name: '', type: 'corrente', initialBalance: '', color: 'bg-blue-600' });
+      };
+
+      const saveAccountLocally = (accData) => {
+        const localAcc = { id: Date.now().toString(), ...accData };
+        const updated = [...accounts, localAcc];
+        setAccounts(updated);
+        saveToLocalStorage(null, null, null, null, null, updated);
+        triggerNotification('Conta guardada localmente!');
+      };
+
+      // Remover Conta Bancária
+      const handleDeleteAccount = async (id) => {
+        if (accounts.length <= 1) {
+          triggerNotification('Não é possível apagar a única conta ativa.', 'error');
+          return;
+        }
+
+        if (dbStatus === 'synced' && user) {
+          try {
+            const accDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', id);
+            await deleteDoc(accDocRef);
+            triggerNotification('Conta removida do Firebase!', 'warning');
+            return;
+          } catch (err) {
+            console.error("Erro ao remover conta no Firebase:", err);
+          }
+        }
+
+        const updated = accounts.filter(a => a.id !== id);
+        setAccounts(updated);
+        saveToLocalStorage(null, null, null, null, null, updated);
+        triggerNotification('Conta removida localmente!', 'warning');
+      };
+
+      // Controlar alterações na data para sugerir status "pendente" automaticamente
+      const handleDateChange = (dateVal) => {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const isFuture = dateVal > todayStr;
+        setNewTx(prev => ({
+          ...prev,
+          date: dateVal,
+          status: isFuture ? 'pendente' : 'liquidado'
+        }));
+      };
+
+      // Adicionar Transação de Caixa (Com Vínculo de Conta Bancária e Estado)
       const handleAddTransaction = async (e) => {
         e.preventDefault();
         if (!newTx.desc.trim() || !newTx.amount || parseFloat(newTx.amount) <= 0) {
@@ -422,12 +543,16 @@
           return;
         }
 
+        const selectedAccId = newTx.accountId || accounts[0]?.id || 'default-acc';
+
         const txData = {
           desc: newTx.desc.trim(),
           amount: parseFloat(newTx.amount),
           type: newTx.type,
           category: newTx.category,
           date: newTx.date || new Date().toISOString().split('T')[0],
+          accountId: selectedAccId,
+          status: newTx.status || 'liquidado', // Estado de liquidação
           createdAt: new Date().toISOString()
         };
 
@@ -444,15 +569,43 @@
           saveTxLocally(txData);
         }
 
-        setNewTx({ desc: '', amount: '', type: 'despesa', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
+        setNewTx({ 
+          desc: '', 
+          amount: '', 
+          type: 'despesa', 
+          category: 'alimentacao', 
+          date: new Date().toISOString().split('T')[0], 
+          accountId: '',
+          status: 'liquidado'
+        });
       };
 
       const saveTxLocally = (txData) => {
         const localItem = { id: Date.now().toString(), ...txData };
         const updated = [localItem, ...transactions];
         setTransactions(updated);
-        saveToLocalStorage(updated, null, null, null, null);
+        saveToLocalStorage(updated, null, null, null, null, null);
         triggerNotification('Guardado localmente (Modo Offline)!');
+      };
+
+      // Liquidar / Efetivar um lançamento pendente
+      const handleClearTransaction = async (id) => {
+        if (dbStatus === 'synced' && user) {
+          try {
+            const txDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', id);
+            await updateDoc(txDocRef, { status: 'liquidado' });
+            triggerNotification('Lançamento liquidado e efetivado com sucesso!');
+            return;
+          } catch (err) {
+            console.error("Erro ao liquidar no Firebase:", err);
+          }
+        }
+
+        // Fallback local
+        const updated = transactions.map(t => t.id === id ? { ...t, status: 'liquidado' } : t);
+        setTransactions(updated);
+        saveToLocalStorage(updated, null, null, null, null, null);
+        triggerNotification('Lançamento liquidado localmente!');
       };
 
       // Remover Transação de Caixa
@@ -470,7 +623,7 @@
         
         const updated = transactions.filter(t => t.id !== id);
         setTransactions(updated);
-        saveToLocalStorage(updated, null, null, null, null);
+        saveToLocalStorage(updated, null, null, null, null, null);
         triggerNotification('Transação apagada localmente!', 'warning');
       };
 
@@ -518,7 +671,7 @@
         const localItem = { id: Date.now().toString(), ...ccTxData };
         const updated = [localItem, ...ccTransactions];
         setCcTransactions(updated);
-        saveToLocalStorage(null, null, null, null, updated);
+        saveToLocalStorage(null, null, null, null, updated, null);
         triggerNotification('Compra a crédito guardada localmente!');
       };
 
@@ -537,7 +690,7 @@
         
         const updated = ccTransactions.filter(t => t.id !== id);
         setCcTransactions(updated);
-        saveToLocalStorage(null, null, null, null, updated);
+        saveToLocalStorage(null, null, null, null, updated, null);
         triggerNotification('Registo apagado localmente!', 'warning');
       };
 
@@ -571,29 +724,34 @@
 
       const saveCcSettingsLocally = (settings) => {
         setCcSettings(settings);
-        saveToLocalStorage(null, null, null, settings, null);
+        saveToLocalStorage(null, null, null, settings, null, null);
         triggerNotification('Definições do cartão guardadas localmente!');
       };
 
       // Processar pagamento da Fatura (Dedução de Saldo e Liquidação de Compras)
       const handleConfirmPayment = async () => {
-        const { invoiceKey, label, total } = paymentModal;
+        const { invoiceKey, label, total, accountId } = paymentModal;
         if (!invoiceKey) return;
 
-        // Validar se há saldo líquido suficiente para liquidar a fatura
-        if (stats.balance < total) {
-          triggerNotification('Erro: Saldo líquido disponível em conta insuficiente!', 'error');
-          setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0 });
+        const targetAccId = accountId || accounts[0]?.id || 'default-acc';
+        const targetAcc = accountsWithBalances.find(a => a.id === targetAccId);
+
+        // Validar se há saldo líquido suficiente para liquidar a fatura na conta escolhida
+        if (targetAcc && targetAcc.currentBalance < total) {
+          triggerNotification(`Erro: Saldo insuficiente na conta ${targetAcc.name}!`, 'error');
+          setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0, accountId: '' });
           return;
         }
 
-        // 1. Criar transação correspondente de despesa na conta de caixa principal
+        // 1. Criar transação correspondente de despesa na conta de caixa principal selecionada
         const paymentTx = {
           desc: `Liquidação Fatura Cartão - ${label}`,
           amount: total,
           type: 'despesa',
           category: 'outros_desp',
           date: new Date().toISOString().split('T')[0],
+          accountId: targetAccId,
+          status: 'liquidado', // Pagamento da fatura é lançado como liquidado imediatamente
           createdAt: new Date().toISOString()
         };
 
@@ -620,7 +778,7 @@
           processPaymentLocally(paymentTx, txsToUpdate);
         }
 
-        setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0 });
+        setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0, accountId: '' });
       };
 
       const processPaymentLocally = (paymentTx, txsToUpdate) => {
@@ -636,8 +794,8 @@
         );
         setCcTransactions(updatedCcTxs);
 
-        saveToLocalStorage(updatedTxs, null, null, null, updatedCcTxs);
-        triggerNotification(`Fatura liquidada localmente!`);
+        saveToLocalStorage(updatedTxs, null, null, null, updatedCcTxs, null);
+        triggerNotification(`Fatura de ${paymentTx.desc} liquidada localmente!`);
       };
 
       // Criar Meta de Poupança
@@ -678,7 +836,7 @@
         const localGoal = { id: Date.now().toString(), ...goalData };
         const updated = [...goals, localGoal];
         setGoals(updated);
-        saveToLocalStorage(null, null, updated, null, null);
+        saveToLocalStorage(null, null, updated, null, null, null);
         triggerNotification('Meta de poupança adicionada localmente!');
       };
 
@@ -702,6 +860,7 @@
           type: 'despesa',
           category: 'outros_desp',
           date: new Date().toISOString().split('T')[0],
+          status: 'liquidado', // Depósitos em metas são considerados liquidados por padrão
           createdAt: new Date().toISOString()
         };
 
@@ -728,7 +887,7 @@
         const updatedTxs = [localTx, ...transactions];
         setTransactions(updatedTxs);
 
-        saveToLocalStorage(updatedTxs, null, updatedGoals, null, null);
+        saveToLocalStorage(updatedTxs, null, updatedGoals, null, null, null);
         setGoalDeposit({ goalId: '', amount: '' });
         triggerNotification(`Reforço de R$ ${amt.toFixed(2)} registado localmente!`);
       };
@@ -748,7 +907,7 @@
 
         const updated = goals.filter(g => g.id !== id);
         setGoals(updated);
-        saveToLocalStorage(null, null, updated, null, null);
+        saveToLocalStorage(null, null, updated, null, null, null);
         triggerNotification('Meta de poupança removida localmente.', 'warning');
       };
 
@@ -770,7 +929,7 @@
           try {
             const budgetsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', 'limits');
             await setDoc(budgetsDocRef, updatedBudgets);
-            triggerNotification('Limite de despesa atualizado no Firebase!');
+            triggerNotification('Limite de despesa updated no Firebase!');
           } catch (err) {
             console.error(err);
             saveBudgetLocally(updatedBudgets);
@@ -784,17 +943,20 @@
 
       const saveBudgetLocally = (updatedBudgets) => {
         setBudgets(updatedBudgets);
-        saveToLocalStorage(null, updatedBudgets, null, null, null);
+        saveToLocalStorage(null, updatedBudgets, null, null, null, null);
         triggerNotification('Limite de despesa atualizado localmente!');
       };
 
-      // Gerar Dados de Demonstração
+      // Gerar Dados de Demonstração (Com inclusão de lançamento futuro/pendente)
       const handleGenerateMockData = async () => {
+        const targetAccId = accounts[0]?.id || 'default-acc';
         const mockTxs = [
-          { desc: 'Vencimento / Salário', amount: 5500, type: 'receita', category: 'salario', date: '2026-05-01' },
-          { desc: 'Renda da Habitação', amount: 1600, type: 'despesa', category: 'moradia', date: '2026-05-02' },
-          { desc: 'Supermercado e Alimentação', amount: 850, type: 'despesa', category: 'alimentacao', date: '2026-05-03' },
-          { desc: 'Projeto Freelance Front-End', amount: 1200, type: 'receita', category: 'freelance', date: '2026-05-10' }
+          { desc: 'Vencimento / Salário', amount: 5500, type: 'receita', category: 'salario', date: '2026-05-01', status: 'liquidado', accountId: targetAccId },
+          { desc: 'Renda da Habitação', amount: 1600, type: 'despesa', category: 'moradia', date: '2026-05-02', status: 'liquidado', accountId: targetAccId },
+          { desc: 'Supermercado e Alimentação', amount: 850, type: 'despesa', category: 'alimentacao', date: '2026-05-03', status: 'liquidado', accountId: targetAccId },
+          { desc: 'Projeto Freelance Front-End', amount: 1200, type: 'receita', category: 'freelance', date: '2026-05-10', status: 'liquidado', accountId: targetAccId },
+          // Adicionando um lançamento futuro pendente de teste
+          { desc: 'Fatura de Luz Agendada', amount: 140, type: 'despesa', category: 'moradia', date: '2026-06-05', status: 'pendente', accountId: targetAccId }
         ];
 
         if (dbStatus === 'synced' && user) {
@@ -803,45 +965,99 @@
             for (const m of mockTxs) {
               await addDoc(txCollectionRef, { ...m, createdAt: new Date().toISOString() });
             }
-            triggerNotification('Dados de teste salvos na nuvem!');
+            triggerNotification('Dados de teste guardados na nuvem!');
             return;
           } catch (err) {
-            console.error(err);
+            console.error("Erro ao guardar dados demonstrativos na nuvem:", err);
           }
         }
 
         const localMockTxs = mockTxs.map((m, idx) => ({ id: `mock-${idx}`, ...m, createdAt: new Date().toISOString() }));
         setTransactions(localMockTxs);
-        saveToLocalStorage(localMockTxs, null, null, null, null);
+        saveToLocalStorage(localMockTxs, null, null, null, null, null);
         triggerNotification('Dados demonstrativos carregados localmente!');
       };
 
+      // Componente utilitário para renderizar o estado de liquidação de forma visual
+      const renderStatusBadge = (status) => {
+        if (status === 'pendente') {
+          return (
+            <span className="bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-flex items-center gap-1">
+              ⏳ Pendente
+            </span>
+          );
+        }
+        return (
+          <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-flex items-center gap-1">
+            ✓ Liquidado
+          </span>
+        );
+      };
+
       // ---------------------------------------------------------
-      // 5. MÉTODOS DE CÁLCULO E LOGICA DE FATURAÇÃO
+      // 5. MÉTODOS DE CÁLCULO DINÂMICO DE CONTAS E ESTATÍSTICAS
       // ---------------------------------------------------------
+
+      // Calcular o saldo corrente de cada conta em tempo real combinando apenas lançamentos LIQUIDADOS
+      const accountsWithBalances = useMemo(() => {
+        return accounts.map(acc => {
+          let currentVal = parseFloat(acc.initialBalance) || 0;
+          
+          transactions.forEach(t => {
+            // Tratar retrocompatibilidade: se a conta for default-acc ou o lançamento não tiver conta, atribui ao default-acc
+            const isMatch = t.accountId === acc.id || (!t.accountId && acc.id === 'default-acc');
+            
+            // FILTRAR: Apenas considera para o saldo se NÃO for "pendente" (ou seja, se já estiver liquidado)
+            if (isMatch && t.status !== 'pendente') {
+              const amt = parseFloat(t.amount) || 0;
+              if (t.type === 'receita') {
+                currentVal += amt;
+              } else {
+                currentVal -= amt;
+              }
+            }
+          });
+
+          return { ...acc, currentBalance: currentVal };
+        });
+      }, [accounts, transactions]);
+
+      // Estatísticas gerais considerando os estados pendente e liquidado
       const stats = useMemo(() => {
+        // Saldo líquido consolidado = soma das contas bancárias liquidadas
+        const totalBalance = accountsWithBalances.reduce((sum, acc) => sum + acc.currentBalance, 0);
+
         let income = 0;
         let expense = 0;
+        let pendingIncome = 0;
+        let pendingExpense = 0;
         
         transactions.forEach(t => {
           const amt = parseFloat(t.amount) || 0;
-          if (t.type === 'receita') {
-            income += amt;
+          if (t.status === 'pendente') {
+            if (t.type === 'receita') {
+              pendingIncome += amt;
+            } else {
+              pendingExpense += amt;
+            }
           } else {
-            expense += amt;
+            if (t.type === 'receita') {
+              income += amt;
+            } else {
+              expense += amt;
+            }
           }
         });
 
-        const balance = income - expense;
         const savingsRate = income > 0 ? Math.max(0, Math.min(100, ((income - expense) / income) * 100)) : 0;
 
         const categoryTotals = {};
-        transactions.filter(t => t.type === 'despesa').forEach(t => {
+        transactions.filter(t => t.type === 'despesa' && t.status !== 'pendente').forEach(t => {
           categoryTotals[t.category] = (categoryTotals[t.category] || 0) + parseFloat(t.amount);
         });
 
-        return { income, expense, balance, savingsRate, categoryTotals };
-      }, [transactions]);
+        return { income, expense, balance: totalBalance, savingsRate, categoryTotals, pendingIncome, pendingExpense };
+      }, [transactions, accountsWithBalances]);
 
       // Atribuir as compras a crédito ao seu respetivo período de faturação (Mês da Fatura)
       const groupedInvoices = useMemo(() => {
@@ -989,40 +1205,54 @@
           const matchesSearch = t.desc.toLowerCase().includes(searchQuery.toLowerCase());
           const matchesType = filterType === 'all' || t.type === filterType;
           const matchesCategory = filterCategory === 'all' || t.category === filterCategory;
-          return matchesSearch && matchesType && matchesCategory;
+          // Aplica o filtro de estado (pendente / liquidado)
+          const matchesStatus = filterStatus === 'all' || (t.status || 'liquidado') === filterStatus;
+          return matchesSearch && matchesType && matchesCategory && matchesStatus;
         });
-      }, [transactions, searchQuery, filterType, filterCategory]);
+      }, [transactions, searchQuery, filterType, filterCategory, filterStatus]);
 
       return (
         <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
           
-          {/* Modal de Confirmação de Pagamento de Fatura (Customizado - Sem use de Alert/Confirm) */}
+          {/* Modal de Confirmação de Pagamento de Fatura (Com Seletor de Conta) */}
           {paymentModal.isOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all">
                 <div className="flex items-center gap-3 text-emerald-600 mb-4">
                   <Icon name="checkCircle" className="w-8 h-8 shrink-0" />
-                  <h3 className="text-lg font-black text-slate-900">Confirmar Liquidação de Fatura</h3>
+                  <h3 className="text-lg font-black text-slate-900">Confirmar Liquidação</h3>
                 </div>
                 
-                <div className="text-sm text-slate-600 space-y-3 mb-6">
-                  <p>Está prestes a liquidar a fatura do cartão de crédito referente a <strong className="text-slate-900">{paymentModal.label}</strong>.</p>
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
-                    <div className="flex justify-between items-center text-xs mb-1">
+                <div className="text-sm text-slate-600 space-y-4 mb-6">
+                  <p>Está prestes a liquidar a fatura do cartão referente a <strong className="text-slate-900">{paymentModal.label}</strong>.</p>
+                  
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 space-y-3">
+                    <div className="flex justify-between items-center text-xs">
                       <span>Total da Fatura:</span>
                       <strong className="text-slate-900 text-sm">R$ {paymentModal.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
                     </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span>Saldo em Conta Bancária:</span>
-                      <strong className="text-emerald-700 text-sm">R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                    
+                    {/* Seletor de Conta para Débito */}
+                    <div className="pt-2 border-t border-slate-200">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Conta para débito</label>
+                      <select 
+                        value={paymentModal.accountId || accounts[0]?.id || ''}
+                        onChange={e => setPaymentModal(prev => ({ ...prev, accountId: e.target.value }))}
+                        className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 bg-white font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        {accountsWithBalances.map(acc => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.name} (Saldo: R$ {acc.currentBalance.toFixed(2)})
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                  <p className="text-xs text-slate-400 italic">Ao prosseguir, uma despesa de igual valor será gerada na sua conta principal e todos os movimentos do cartão associados a este mês serão marcados como pagos.</p>
                 </div>
 
                 <div className="flex gap-2 justify-end">
                   <button 
-                    onClick={() => setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0 })}
+                    onClick={() => setPaymentModal({ isOpen: false, invoiceKey: null, label: '', total: 0, accountId: '' })}
                     className="px-4 py-2.5 rounded-xl border font-bold text-xs text-slate-500 hover:bg-slate-50 transition"
                   >
                     Cancelar
@@ -1134,7 +1364,17 @@
                       Extrato de Transações ({transactions.length})
                     </button>
 
-                    {/* Novo Item: Cartão de Crédito */}
+                    {/* Novo Item: Contas Correntes */}
+                    <button 
+                      onClick={() => setActiveTab('accounts')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
+                        activeTab === 'accounts' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <Icon name="bank" className="w-4 h-4 animate-pulse" />
+                      Contas Correntes ({accounts.length})
+                    </button>
+
                     <button 
                       onClick={() => setActiveTab('credit-card')}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
@@ -1203,7 +1443,13 @@
                           <p className={`text-xl font-black ${stats.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
                             R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-1">Líquido em conta</p>
+                          {stats.pendingExpense > 0 || stats.pendingIncome > 0 ? (
+                            <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-0.5" title="Valores futuros ainda não contabilizados no saldo corrente">
+                              <span>Futuro: +R$ {stats.pendingIncome.toFixed(2)} | -R$ {stats.pendingExpense.toFixed(2)}</span>
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-slate-400 mt-1">Soma de contas liquidadas</p>
+                          )}
                         </div>
                         <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
                           <Icon name="dollarSign" className="w-5 h-5" />
@@ -1216,7 +1462,7 @@
                           <p className="text-xl font-black text-emerald-600">
                             + R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-1">Entradas em conta</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Efetivadas em conta</p>
                         </div>
                         <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
                           <Icon name="arrowUpRight" className="w-5 h-5" />
@@ -1229,7 +1475,7 @@
                           <p className="text-xl font-black text-rose-600">
                             - R$ {stats.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-1">Contas pagas à vista</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Contas liquidadas à vista</p>
                         </div>
                         <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
                           <Icon name="arrowDownRight" className="w-5 h-5" />
@@ -1258,12 +1504,12 @@
                       <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                         <h3 className="font-extrabold text-slate-900 text-base mb-4 flex items-center gap-2">
                           <Icon name="pieChart" className="w-5 h-5 text-emerald-600" />
-                          Custos por Categoria
+                          Custos por Categoria (Liquidados)
                         </h3>
 
                         {stats.expense === 0 ? (
                           <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center space-y-3">
-                            <p className="text-xs">Não existem despesas registadas no banco de dados.</p>
+                            <p className="text-xs">Não existem despesas liquidadas registadas no banco de dados.</p>
                             <button 
                               onClick={handleGenerateMockData}
                               className="text-xs bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-slate-850"
@@ -1336,7 +1582,7 @@
                       
                       {/* Adicionar Transação */}
                       <div className="md:col-span-4 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-                        <h3 className="font-extrabold text-slate-900 text-base mb-4">Novo Registo (Dinheiro/Caixa)</h3>
+                        <h3 className="font-extrabold text-slate-900 text-base mb-4">Novo Lançamento</h3>
                         <form onSubmit={handleAddTransaction} className="space-y-3">
                           <div>
                             <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Descrição</label>
@@ -1368,10 +1614,40 @@
                               <input 
                                 type="date"
                                 value={newTx.date}
-                                onChange={e => setNewTx(prev => ({ ...prev, date: e.target.value }))}
+                                onChange={e => handleDateChange(e.target.value)}
                                 className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
                               />
                             </div>
+                          </div>
+
+                          {/* Selecionar Conta do Lançamento */}
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Conta para Vincular</label>
+                            <select 
+                              value={newTx.accountId || (accounts[0]?.id || 'default-acc')}
+                              onChange={e => setNewTx(prev => ({ ...prev, accountId: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none"
+                            >
+                              {accountsWithBalances.map(acc => (
+                                <option key={acc.id} value={acc.id}>
+                                  {acc.name} (R$ {acc.currentBalance.toFixed(2)})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Selecionar Estado do Lançamento (Pendente vs Liquidado) */}
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Estado do Lançamento</label>
+                            <select 
+                              value={newTx.status}
+                              onChange={e => setNewTx(prev => ({ ...prev, status: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold"
+                            >
+                              <option value="liquidado">🟢 Efetivado / Liquidado</option>
+                              <option value="pendente">⏳ Pendente (Lançamento Futuro)</option>
+                            </select>
+                            <p className="text-[9px] text-slate-400 mt-1 italic">Lançamentos pendentes não alteram o seu saldo corrente até serem liquidados.</p>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2">
@@ -1429,7 +1705,8 @@
                           <table className="w-full text-left text-xs">
                             <thead>
                               <tr className="border-b border-slate-100 text-slate-400 font-semibold">
-                                <th className="pb-3 text-[10px] uppercase">Descrição</th>
+                                <th className="pb-3 text-[10px] uppercase">Descrição / Conta</th>
+                                <th className="pb-3 text-[10px] uppercase">Estado</th>
                                 <th className="pb-3 text-[10px] uppercase">Data</th>
                                 <th className="pb-3 text-[10px] uppercase text-right">Valor</th>
                                 <th className="pb-3"></th>
@@ -1440,24 +1717,42 @@
                                 const isInc = t.type === 'receita';
                                 const catList = isInc ? CATEGORIES.receita : CATEGORIES.despesa;
                                 const catObj = catList.find(c => c.id === t.category) || { name: 'Geral', icon: '💸' };
+                                const linkedAcc = accountsWithBalances.find(a => a.id === t.accountId) || { name: 'Conta Principal', color: 'bg-blue-600' };
+                                const isPending = t.status === 'pendente';
 
                                 return (
-                                  <tr key={t.id} className="hover:bg-slate-50/50">
+                                  <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/20' : ''}`}>
                                     <td className="py-3">
-                                      <div className="font-semibold text-slate-800">{t.desc}</div>
-                                      <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                                        <span>{catObj.icon}</span>
-                                        <span>{catObj.name}</span>
+                                      <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-800'}`}>{t.desc}</div>
+                                      <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                        <span>{catObj.icon} {catObj.name}</span>
+                                        <span>•</span>
+                                        <span className={`inline-block w-2 h-2 rounded-full ${linkedAcc.color}`}></span>
+                                        <span>{linkedAcc.name}</span>
                                       </div>
                                     </td>
+                                    <td className="py-3">
+                                      {renderStatusBadge(t.status)}
+                                    </td>
                                     <td className="py-3 text-slate-500">{new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</td>
-                                    <td className={`py-3 font-extrabold text-right ${isInc ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                    <td className={`py-3 font-extrabold text-right ${isInc ? 'text-emerald-600' : 'text-slate-800'} ${isPending ? 'opacity-60' : ''}`}>
                                       {isInc ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </td>
                                     <td className="py-3 text-right">
-                                      <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600 p-1">
-                                        <Icon name="trash" className="w-4 h-4" />
-                                      </button>
+                                      <div className="flex items-center justify-end gap-1">
+                                        {isPending && (
+                                          <button 
+                                            onClick={() => handleClearTransaction(t.id)} 
+                                            className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded"
+                                            title="Liquidar / Efetivar Lançamento"
+                                          >
+                                            <Icon name="check" className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600 p-1">
+                                          <Icon name="trash" className="w-4 h-4" />
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 );
@@ -1465,7 +1760,7 @@
 
                               {transactions.length === 0 && (
                                 <tr>
-                                  <td colSpan="4" className="py-8 text-center text-slate-400 italic">
+                                  <td colSpan="5" className="py-8 text-center text-slate-400 italic">
                                     Sem dados registados na nuvem. Comece por adicionar um lançamento!
                                   </td>
                                 </tr>
@@ -1507,6 +1802,12 @@
                           <option value="despesa">Despesas</option>
                         </select>
 
+                        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="border border-slate-200 text-xs rounded-xl px-2.5 py-2">
+                          <option value="all">Estado (Todos)</option>
+                          <option value="liquidado">Liquidado</option>
+                          <option value="pendente">Pendente</option>
+                        </select>
+
                         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="border border-slate-200 text-xs rounded-xl px-2.5 py-2">
                           <option value="all">Categorias</option>
                           {CATEGORIES.receita.map(c => <option key={c.id} value={c.id}>🟢 {c.name}</option>)}
@@ -1519,8 +1820,9 @@
                       <table className="w-full text-left text-xs">
                         <thead>
                           <tr className="border-b border-slate-100 text-slate-400 font-semibold">
-                            <th className="pb-3">Descrição</th>
+                            <th className="pb-3">Descrição / Conta</th>
                             <th className="pb-3">Categoria</th>
+                            <th className="pb-3">Estado</th>
                             <th className="pb-3">Data de Registo</th>
                             <th className="pb-3 text-right">Montante</th>
                             <th className="pb-3"></th>
@@ -1531,24 +1833,46 @@
                             const isInc = t.type === 'receita';
                             const catList = isInc ? CATEGORIES.receita : CATEGORIES.despesa;
                             const catObj = catList.find(c => c.id === t.category) || { name: 'Outros', icon: '💸' };
+                            const linkedAcc = accountsWithBalances.find(a => a.id === t.accountId) || { name: 'Conta Principal', color: 'bg-blue-600' };
+                            const isPending = t.status === 'pendente';
 
                             return (
-                              <tr key={t.id} className="hover:bg-slate-50/50">
-                                <td className="py-4 font-semibold text-slate-900">{t.desc}</td>
+                              <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/10' : ''}`}>
+                                <td className="py-4">
+                                  <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-900'}`}>{t.desc}</div>
+                                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
+                                    <span className={`inline-block w-2 h-2 rounded-full ${linkedAcc.color}`}></span>
+                                    <span>{linkedAcc.name}</span>
+                                  </div>
+                                </td>
                                 <td className="py-4">
                                   <span className="inline-flex items-center gap-1.5 bg-slate-50 border px-2.5 py-0.5 rounded-full font-medium">
                                     <span>{catObj.icon}</span>
                                     <span>{catObj.name}</span>
                                   </span>
                                 </td>
+                                <td className="py-4">
+                                  {renderStatusBadge(t.status)}
+                                </td>
                                 <td className="py-4 text-slate-500">{new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}</td>
-                                <td className={`py-4 font-extrabold text-right ${isInc ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                <td className={`py-4 font-extrabold text-right ${isInc ? 'text-emerald-600' : 'text-slate-800'} ${isPending ? 'opacity-65' : ''}`}>
                                   {isInc ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                 </td>
                                 <td className="py-4 text-right">
-                                  <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600">
-                                    <Icon name="trash" className="w-4 h-4" />
-                                  </button>
+                                  <div className="flex items-center justify-end gap-2">
+                                    {isPending && (
+                                      <button 
+                                        onClick={() => handleClearTransaction(t.id)} 
+                                        className="text-emerald-600 hover:text-emerald-800 p-1.5 hover:bg-emerald-50 rounded-lg transition"
+                                        title="Liquidar Lançamento"
+                                      >
+                                        <Icon name="checkCircle" className="w-4.5 h-4.5" />
+                                      </button>
+                                    )}
+                                    <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600">
+                                      <Icon name="trash" className="w-4 h-4" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1559,7 +1883,129 @@
                   </div>
                 )}
 
-                {/* 3. NOVO SEPARADOR COMPLETO: SISTEMA DE CARTÃO DE CRÉDITO */}
+                {/* 3. NOVO SEPARADOR COMPLETO: GESTÃO DE CONTAS CORRENTES */}
+                {activeTab === 'accounts' && (
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                    
+                    {/* Painel Esquerdo: Formulário de Nova Conta */}
+                    <div className="md:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 h-fit">
+                      <h3 className="font-extrabold text-slate-900 text-sm mb-4">Adicionar Nova Conta</h3>
+                      <form onSubmit={handleCreateAccount} className="space-y-4">
+                        <div>
+                          <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Nome da Conta</label>
+                          <input 
+                            type="text" 
+                            placeholder="Ex: ActivoBank, Carteira, Poupança"
+                            value={newAccount.name}
+                            onChange={e => setNewAccount(prev => ({ ...prev, name: e.target.value }))}
+                            className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
+                            required
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Tipo de Conta</label>
+                            <select 
+                              value={newAccount.type}
+                              onChange={e => setNewAccount(prev => ({ ...prev, type: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none"
+                            >
+                              <option value="corrente">💳 Corrente</option>
+                              <option value="poupança">📈 Poupança</option>
+                              <option value="carteira">💵 Dinheiro / Carteira</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Saldo Inicial (R$)</label>
+                            <input 
+                              type="number" 
+                              step="0.01"
+                              placeholder="0.00"
+                              value={newAccount.initialBalance}
+                              onChange={e => setNewAccount(prev => ({ ...prev, initialBalance: e.target.value }))}
+                              className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Cor de Identificação</label>
+                          <select 
+                            value={newAccount.color}
+                            onChange={e => setNewAccount(prev => ({ ...prev, color: e.target.value }))}
+                            className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-700"
+                          >
+                            <option value="bg-blue-600">🔵 Azul</option>
+                            <option value="bg-emerald-600">🟢 Verde</option>
+                            <option value="bg-purple-600">🟣 Roxo</option>
+                            <option value="bg-rose-600">🔴 Rosa</option>
+                            <option value="bg-amber-600">🟡 Laranja</option>
+                            <option value="bg-slate-600">⚪ Cinzento</option>
+                          </select>
+                        </div>
+
+                        <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-850 transition">
+                          Criar Conta Bancária
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Painel Direito: Listagem de Contas Existentes */}
+                    <div className="md:col-span-8 bg-white rounded-3xl p-6 border border-slate-200 space-y-4">
+                      <div>
+                        <h2 className="font-extrabold text-slate-900 text-lg">Suas Contas Bancárias</h2>
+                        <p className="text-xs text-slate-400">Gerencie saldos iniciais e verifique as disponibilidades de caixa.</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {accountsWithBalances.map(acc => {
+                          const isNegative = acc.currentBalance < 0;
+
+                          return (
+                            <div key={acc.id} className="p-5 border border-slate-100 rounded-3xl bg-slate-50/50 hover:shadow-sm transition flex flex-col justify-between space-y-4">
+                              <div className="flex justify-between items-start">
+                                <div className="flex items-center gap-2.5">
+                                  <span className={`inline-block w-3.5 h-3.5 rounded-full ${acc.color} shadow-sm`}></span>
+                                  <div>
+                                    <h4 className="font-black text-slate-900 text-sm">{acc.name}</h4>
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase">
+                                      {acc.type === 'corrente' ? '💳 Conta Corrente' : acc.type === 'poupança' ? '📈 Poupança' : '💵 Dinheiro / Carteira'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {accounts.length > 1 && (
+                                  <button 
+                                    onClick={() => handleDeleteAccount(acc.id)}
+                                    className="text-slate-300 hover:text-rose-600 transition p-1"
+                                    title="Remover Conta"
+                                  >
+                                    <Icon name="trash" className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="border-t border-slate-200 pt-3">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Saldo Corrente</p>
+                                <p className={`text-xl font-black ${isNegative ? 'text-rose-600' : 'text-slate-900'}`}>
+                                  R$ {acc.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </p>
+                                <span className="text-[9px] text-slate-400 italic">
+                                  (Inicial: R$ {(parseFloat(acc.initialBalance) || 0).toFixed(2)})
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+
+                {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO */}
                 {activeTab === 'credit-card' && (
                   <div className="space-y-6">
                     
@@ -1776,7 +2222,7 @@
                                       </span>
                                     ) : (
                                       <button 
-                                        onClick={() => setPaymentModal({ isOpen: true, invoiceKey: invoice.key, label: invoice.label, total: invoice.total })}
+                                        onClick={() => setPaymentModal({ isOpen: true, invoiceKey: invoice.key, label: invoice.label, total: invoice.total, accountId: '' })}
                                         className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold px-3 py-2 rounded-xl transition shadow"
                                       >
                                         Pagar Fatura
@@ -1828,7 +2274,7 @@
                   </div>
                 )}
 
-                {/* 4. SEPARADOR: LIMITES DE ORÇAMENTO */}
+                {/* 5. SEPARADOR: LIMITES DE ORÇAMENTO */}
                 {activeTab === 'budgets' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     <div className="md:col-span-4 bg-white rounded-2xl p-5 border border-slate-200">
@@ -1906,7 +2352,7 @@
                   </div>
                 )}
 
-                {/* 5. SEPARADOR: METAS DE POUPANÇA */}
+                {/* 6. SEPARADOR: METAS DE POUPANÇA */}
                 {activeTab === 'goals' && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                     <div className="md:col-span-4 flex flex-col gap-6">
@@ -2028,7 +2474,7 @@
                   </div>
                 )}
 
-                {/* 6. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
+                {/* 7. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
                 {activeTab === 'simulator' && (
                   <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-6">
                     <div>
