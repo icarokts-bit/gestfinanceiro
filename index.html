@@ -1104,7 +1104,7 @@
         const updated = ccTransactions.map(t => t.id === updatedTx.id ? updatedTx : t);
         setCcTransactions(updated);
         saveToLocalStorage(null, null, null, null, updated, null);
-        triggerNotification('Compra a crédito atualizada localmente!');
+        triggerNotification('Compra a crédito updated localmente!');
       };
 
       // Remover Transação de Cartão de Crédito
@@ -1507,7 +1507,12 @@
             }
           });
 
-          return { ...acc, currentBalance: currentVal };
+          // CORREÇÃO: Fallback Robusto. Se a conta não tem overdraftLimit no documento, assume 1000 em vez de crashar ou ir a 0.
+          const overdraftLimit = acc.overdraftLimit !== undefined && acc.overdraftLimit !== null 
+            ? parseFloat(acc.overdraftLimit) 
+            : 1000;
+
+          return { ...acc, currentBalance: currentVal, overdraftLimit };
         });
       }, [accounts, transactions]);
 
@@ -1768,7 +1773,7 @@
           {/* Modal de Adiantamento de Pagamento (Amortização Fatura) */}
           {prepaymentModal.isOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all animate-bounce-short">
+              <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all">
                 <div className="flex items-center gap-3 text-emerald-600 mb-4">
                   <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-2xl">
                     <Icon name="dollarSign" className="w-8 h-8 shrink-0" />
@@ -1888,7 +1893,7 @@
           {/* Modal de Edição de Conta Corrente */}
           {editAccountModal.isOpen && editAccountModal.account && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all animate-bounce-short">
+              <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100">
                 <div className="flex items-center gap-3 text-indigo-600 mb-4">
                   <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
                     <Icon name="edit" className="w-6 h-6 shrink-0" />
@@ -1989,7 +1994,7 @@
           {/* Modal Inteligente de Ajuste de Limite de Crédito */}
           {autoLimitModal.isOpen && (
             <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform transition-all animate-bounce-short">
+              <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100">
                 <div className="flex items-center gap-3 text-amber-500 mb-4">
                   <Icon name="alertTriangle" className="w-10 h-10 shrink-0" />
                   <h3 className="text-lg font-black text-slate-900">Limite de Crédito Insuficiente</h3>
@@ -2025,7 +2030,7 @@
                   </button>
                   <button 
                     onClick={handleAutoAdjustLimit}
-                    className="px-5 py-2.5 rounded-xl bg-indigo-655 hover:bg-indigo-700 bg-indigo-600 text-white font-bold text-xs transition shadow-md"
+                    className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs transition shadow-md"
                   >
                     Ajustar Limite e Autorizar
                   </button>
@@ -2219,10 +2224,7 @@
                       <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Categoria</label>
                       <select 
                         value={editModal.transaction.category}
-                        onChange={e => setEditModal(prev => ({
-                          ...prev,
-                          transaction: { ...prev.transaction, category: e.target.value }
-                        }))}
+                        onChange={e => setNewTx(prev => ({ ...prev, category: e.target.value }))}
                         className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none"
                       >
                         {CATEGORIES[editModal.transaction.type].map(c => (
@@ -2771,7 +2773,7 @@
                                   🚨 ERRO: O valor excede o limite disponível de cheque especial desta conta (R$ {overdraftProjectedWarning.odfLimit.toFixed(2)}).
                                 </p>
                               ) : (
-                                <p className="text-[10px] text-amber-700 italic leading-tight">
+                                <p className="text-[10px] text-amber-700 italic leading-tight mt-1">
                                   Serão aplicadas taxas de utilização diárias do seu banco caso confirme o lançamento.
                                 </p>
                               )}
@@ -3209,7 +3211,7 @@
                           </select>
                         </div>
 
-                        <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-850 transition">
+                        <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-slate-855 transition">
                           Criar Conta Bancária
                         </button>
                       </form>
@@ -3310,7 +3312,6 @@
                   </div>
                 )}
 
-                {/* Separadores restantes (Cartão de Crédito, Orçamentos, Metas, etc.) mantidos sem alterações para integridade funcional */}
                 {/* 4. SEPARADOR: SISTEMA DE CARTÃO DE CRÉDITO */}
                 {activeTab === 'credit-card' && (
                   <div className="space-y-6">
