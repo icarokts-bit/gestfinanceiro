@@ -249,8 +249,16 @@
 
       const triggerNotification = (message, type = 'success') => {
         setNotification({ message, type });
-        setTimeout(() => setNotification(null), 4000);
+        setTimeout(() => setNotification(null), 4500);
       };
+
+      // Sincronizar UI de alertas de notificação suspensa
+      useEffect(() => {
+        if (notification) {
+          const timer = setTimeout(() => setNotification(null), 4500);
+          return () => clearTimeout(timer);
+        }
+      }, [notification]);
 
       // Inicializa campos de definições de cartão quando carregado
       useEffect(() => {
@@ -908,6 +916,28 @@
         triggerNotification('Prestações guardadas localmente!');
       };
 
+      // Alterar estado de pagamento de uma única transação de crédito (PAGO / EM ABERTO)
+      const handleToggleCcPaymentStatus = async (id, currentPaidStatus) => {
+        const newPaidStatus = !currentPaidStatus;
+        
+        if (dbStatus === 'synced' && user) {
+          try {
+            const ccTxDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions', id);
+            await updateDoc(ccTxDocRef, { paid: newPaidStatus });
+            triggerNotification(newPaidStatus ? 'Compra marcada como paga!' : 'Compra reaberta (em aberto)!');
+            return;
+          } catch (err) {
+            console.error("Erro ao alternar pagamento de compra no Firebase:", err);
+          }
+        }
+
+        // Fallback offline local
+        const updated = ccTransactions.map(t => t.id === id ? { ...t, paid: newPaidStatus } : t);
+        setCcTransactions(updated);
+        saveToLocalStorage(null, null, null, null, updated, null);
+        triggerNotification(newPaidStatus ? 'Compra marcada como paga localmente!' : 'Compra reaberta localmente!');
+      };
+
       // Abrir o modal de adiantamento de fatura
       const openPrepaymentModal = () => {
         setPrepaymentModal({
@@ -1309,7 +1339,7 @@
           try {
             const budgetsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', 'limits');
             await setDoc(budgetsDocRef, updatedBudgets);
-            triggerNotification('Limite de despesa atualizado no Firebase!');
+            triggerNotification('Limite de despesa updated no Firebase!');
           } catch (err) {
             console.error(err);
             saveBudgetLocally(updatedBudgets);
@@ -1692,8 +1722,19 @@
       }, [prepaymentModal.amountType, prepaymentModal.customAmount, totalUnpaidCcAmount, availableCcLimit, ccSettings]);
 
       return (
-        <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+        <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans relative">
           
+          {/* Caixa Suspensa de Alerta de Notificação Flutuante Premium */}
+          {notification && (
+            <div className="fixed top-24 right-6 z-50 animate-bounce max-w-sm w-full bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border border-emerald-500/30 flex items-center gap-3">
+              <span className="text-xl">🔔</span>
+              <div>
+                <p className="text-xs font-bold leading-tight">{notification.message}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">FinançasPro Sync</p>
+              </div>
+            </div>
+          )}
+
           {/* Modal de Adiantamento de Pagamento */}
           {prepaymentModal.isOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -2272,7 +2313,7 @@
           <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-md">
             <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="bg-emerald-505 bg-emerald-500 p-2 rounded-xl text-slate-900 shadow-lg">
+                <div className="bg-emerald-500 p-2 rounded-xl text-slate-900 shadow-lg">
                   <Icon name="trendingUp" className="w-6 h-6" />
                 </div>
                 <div>
@@ -2639,7 +2680,7 @@
                               <select 
                                 value={newTx.status}
                                 onChange={e => setNewTx(prev => ({ ...prev, status: e.target.value }))}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none font-semibold text-slate-705 text-slate-700"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none font-semibold text-slate-700"
                               >
                                 <option value="liquidado">🟢 Pago / Recebido</option>
                                 <option value="pendente">⏳ Pendente</option>
@@ -2723,7 +2764,7 @@
                             <select 
                               value={newTx.accountId || (accounts[0]?.id || 'default-acc')}
                               onChange={e => setNewTx(prev => ({ ...prev, accountId: e.target.value }))}
-                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-705 text-slate-700 font-semibold"
+                              className="w-full text-xs rounded-xl border border-slate-200 px-2.5 py-2.5 focus:outline-none cursor-pointer text-slate-700 font-semibold"
                             >
                               {accountsWithBalances.map(acc => {
                                 const totalPower = acc.currentBalance + (acc.overdraftLimit || 0);
@@ -2750,7 +2791,7 @@
                                   }));
                                   setIsInstallment(false);
                                 }}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-705 text-slate-700"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-700"
                               >
                                 <option value="despesa">🔴 Despesa</option>
                                 <option value="receita">🟢 Receita</option>
@@ -2788,8 +2829,8 @@
                       <div className="md:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                         <div className="flex justify-between items-center mb-4">
                           <h3 className="font-extrabold text-slate-900 text-base">Lançamentos Registados</h3>
-                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-555 text-emerald-600 font-bold hover:underline">
-                            Ver Extrato Completo
+                          <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-600 font-bold hover:underline">
+                            Ver Extrato Computado
                           </button>
                         </div>
 
@@ -2826,7 +2867,7 @@
                                     <td className="py-3">
                                       {renderStatusBadge(t.status)}
                                     </td>
-                                    <td className="py-3 text-slate-655 text-slate-600 text-[11px] leading-tight">
+                                    <td className="py-3 text-slate-600 text-[11px] leading-tight">
                                       <div className="font-extrabold text-slate-800">
                                         📅 {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
                                       </div>
@@ -2839,7 +2880,7 @@
                                         {isPending && (
                                           <button 
                                             onClick={() => handleClearTransaction(t.id)} 
-                                            className="text-emerald-500 hover:text-emerald-705 p-1 hover:bg-emerald-50 rounded"
+                                            className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded"
                                             title="Liquidar Lançamento"
                                           >
                                             <Icon name="check" className="w-4 h-4" />
@@ -2852,7 +2893,7 @@
                                         >
                                           <Icon name="edit" className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-655 p-1">
+                                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-slate-300 hover:text-rose-600 p-1">
                                           <Icon name="trash" className="w-4 h-4" />
                                         </button>
                                       </div>
@@ -2884,7 +2925,7 @@
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                       <div>
                         <h2 className="text-lg font-black text-slate-900">Extrato Consolidado</h2>
-                        <p className="text-xs text-slate-405">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
+                        <p className="text-xs text-slate-400">Consulte, pesquise e filtre todas as suas movimentações baseadas no vencimento.</p>
                       </div>
 
                       <div className="flex flex-wrap gap-2">
@@ -2942,7 +2983,7 @@
                             return (
                               <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/10' : ''}`}>
                                 <td className="py-4">
-                                  <div className={`font-semibold ${isPending ? 'text-slate-505 text-slate-500 italic' : 'text-slate-905 text-slate-900'}`}>{t.desc}</div>
+                                  <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-900'}`}>{t.desc}</div>
                                   <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
                                     <span className={`inline-block w-2 h-2 rounded-full ${linkedAcc.color}`}></span>
                                     <span>{linkedAcc.name}</span>
@@ -2978,7 +3019,7 @@
                                     )}
                                     <button 
                                       onClick={() => openEditModal(t)} 
-                                      className="text-slate-405 text-slate-400 hover:text-indigo-650 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                                      className="text-slate-400 hover:text-indigo-650 p-1.5 hover:bg-slate-100 rounded-lg transition"
                                       title="Editar Lançamento"
                                     >
                                       <Icon name="edit" className="w-4 h-4" />
@@ -3169,7 +3210,7 @@
                       {/* Card de Crédito Físico */}
                       <div className="md:col-span-7 flex flex-col justify-between">
                         <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-xl border border-slate-700/50 flex flex-col justify-between relative overflow-hidden min-h-[220px]">
-                          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-505 bg-indigo-500/10 rounded-full blur-3xl"></div>
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
                           <div className="absolute bottom-0 left-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl"></div>
                           <div className="flex justify-between items-start">
                             <div>
@@ -3239,7 +3280,7 @@
                             disabled={totalUnpaidCcAmount <= 0}
                             className={`w-full sm:w-auto text-white text-[11px] font-bold px-4 py-3 rounded-xl transition shadow flex items-center justify-center gap-1.5 ${
                               totalUnpaidCcAmount <= 0 
-                                ? 'bg-slate-300 cursor-not-allowed text-slate-505 text-slate-500' 
+                                ? 'bg-slate-300 cursor-not-allowed text-slate-500' 
                                 : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow-lg'
                             }`}
                           >
@@ -3303,7 +3344,7 @@
                                 />
                               </div>
                             </div>
-                            <button type="submit" className="w-full bg-slate-955 bg-slate-900 text-white font-bold py-2 rounded-xl text-xs hover:bg-slate-800 transition shadow">
+                            <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs hover:bg-slate-800 transition shadow">
                               Guardar Ajustes
                             </button>
                           </form>
@@ -3367,7 +3408,7 @@
                                 onChange={e => setIsCcInstallment(e.target.checked)}
                                 className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded"
                               />
-                              <label htmlFor="isCcInstallmentCheckbox" className="text-xs font-bold text-slate-705 text-slate-700 cursor-pointer">
+                              <label htmlFor="isCcInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer">
                                 Compra Parcelada / Prestações
                               </label>
                             </div>
@@ -3444,12 +3485,12 @@
                                       </div>
                                       
                                       {invoice.isPaid ? (
-                                        <span className="bg-emerald-55 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
+                                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
                                           ✓ Paga
                                         </span>
                                       ) : (
                                         <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
-                                          ⏳ Aberta
+                                          ⏳ Em Aberto
                                         </span>
                                       )}
                                     </div>
@@ -3475,7 +3516,7 @@
                                                 {isCreditItem ? '💰' : catObj.icon}
                                               </span>
                                               <div>
-                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-805 text-emerald-800 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
+                                                <p className={`font-semibold ${isCreditItem ? 'text-emerald-800 font-bold' : item.paid ? 'line-through text-slate-400 italic' : 'text-slate-800'}`}>
                                                   {item.desc}
                                                 </p>
                                                 <p className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
@@ -3486,40 +3527,45 @@
                                               </div>
                                             </div>
 
-                                            {/* Preço e Estado */}
+                                            {/* Preço e Estado com Botões Clicáveis */}
                                             <div className="flex items-center gap-3">
-                                              <div className="text-right">
+                                              <div className="text-right flex flex-col items-end">
                                                 <p className={`font-bold font-mono ${isCreditItem ? 'text-emerald-600 font-bold' : item.paid ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
                                                   {isCreditItem ? '-' : ''} R$ {Math.abs(parseFloat(item.amount)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 </p>
+                                                
                                                 {isCreditItem ? (
-                                                  <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
+                                                  <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-1 inline-block select-none">
                                                     Crédito Lançado
                                                   </span>
-                                                ) : item.paid ? (
-                                                  <span className="bg-slate-100 text-slate-505 text-slate-500 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
-                                                    Pago
-                                                  </span>
                                                 ) : (
-                                                  <span className="bg-amber-50 text-amber-700 border border-amber-100 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mt-0.5 inline-block">
-                                                    A vencer
-                                                  </span>
+                                                  <button
+                                                    onClick={() => handleToggleCcPaymentStatus(item.id, item.paid)}
+                                                    className={`text-[8px] font-black px-2.5 py-0.5 rounded-full uppercase mt-1 transition-all flex items-center gap-1 cursor-pointer select-none shrink-0 ${
+                                                      item.paid
+                                                        ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                                                        : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 shadow-sm'
+                                                    }`}
+                                                    title={item.paid ? "Clique para reabrir (colocar em aberto)" : "Clique para marcar como pago"}
+                                                  >
+                                                    {item.paid ? '✓ Pago' : '⏳ Em Aberto'}
+                                                  </button>
                                                 )}
                                               </div>
 
-                                              {/* Ações */}
+                                              {/* Ações adicionais (Editar/Excluir) */}
                                               <div className="flex items-center gap-1 border-l border-slate-200/80 pl-2">
                                                 <button 
                                                   onClick={() => openEditCcModal(item)}
                                                   className="text-slate-300 hover:text-indigo-650 transition p-1 hover:bg-white rounded-lg"
-                                                  title="Editar"
+                                                  title="Editar Compra"
                                                 >
                                                   <Icon name="edit" className="w-3.5 h-3.5" />
                                                 </button>
                                                 <button 
                                                   onClick={() => handleDeleteCcTransaction(item.id)}
                                                   className="text-slate-300 hover:text-rose-600 transition p-1 hover:bg-white rounded-lg"
-                                                  title="Excluir"
+                                                  title="Excluir Compra"
                                                 >
                                                   <Icon name="trash" className="w-3.5 h-3.5" />
                                                 </button>
@@ -3739,7 +3785,7 @@
                                 required
                               />
                             </div>
-                            <button type="submit" className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm">
+                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm">
                               Depositar na Meta
                             </button>
                           </form>
