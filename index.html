@@ -639,10 +639,10 @@
         }
 
         const selectedAccId = newTx.accountId || accounts[0]?.id || 'default-acc';
-        const numInstallments = isInstallment ? installmentsCount : 1;
+        const numInstallments = isInstallment ? (parseInt(installmentsCount) || 2) : 1;
 
         // Distribuição do valor pelas prestações
-        const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 100) / 100;
+        const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 105) / 105;
         const remainder = Math.round((totalAmount - (baseInstallmentAmount * numInstallments)) * 100) / 100;
 
         const generatedTxs = [];
@@ -831,7 +831,7 @@
           return;
         }
 
-        const numInstallments = isCcInstallment ? ccInstallmentsCount : 1;
+        const numInstallments = isCcInstallment ? (parseInt(ccInstallmentsCount) || 2) : 1;
         const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 100) / 100;
         const remainder = Math.round((totalAmount - (baseInstallmentAmount * numInstallments)) * 100) / 100;
 
@@ -2723,15 +2723,18 @@
                                 <div className="space-y-2 pt-1">
                                   <div className="flex items-center gap-3">
                                     <span className="text-xs text-slate-500 shrink-0">Número de parcelas:</span>
-                                    <select 
+                                    <input 
+                                      type="number" 
+                                      min="2"
+                                      max="120"
+                                      placeholder="Ex: 12"
                                       value={installmentsCount}
-                                      onChange={e => setInstallmentsCount(parseInt(e.target.value))}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setInstallmentsCount(val === '' ? '' : Math.max(2, parseInt(val) || 2));
+                                      }}
                                       className="flex-1 text-xs rounded-lg border border-slate-200 p-1.5 focus:outline-none font-bold text-slate-800"
-                                    >
-                                      {[2,3,4,5,6,10,12,18,24,36].map(num => (
-                                        <option key={num} value={num}>{num}x</option>
-                                      ))}
-                                    </select>
+                                    />
                                   </div>
                                 </div>
                               )}
@@ -3416,15 +3419,18 @@
                               <div className="space-y-2 pt-1">
                                 <div className="flex items-center gap-3">
                                   <span className="text-xs text-slate-500 shrink-0">Parcelas:</span>
-                                  <select 
+                                  <input 
+                                    type="number" 
+                                    min="2"
+                                    max="120"
+                                    placeholder="Ex: 3"
                                     value={ccInstallmentsCount}
-                                    onChange={e => setCcInstallmentsCount(parseInt(e.target.value))}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setCcInstallmentsCount(val === '' ? '' : Math.max(2, parseInt(val) || 2));
+                                    }}
                                     className="flex-1 text-xs rounded-lg border border-slate-200 p-1.5 focus:outline-none font-bold text-slate-800"
-                                  >
-                                    {[2,3,4,5,6,10,12,18,24,36].map(num => (
-                                      <option key={num} value={num}>{num}x</option>
-                                    ))}
-                                  </select>
+                                  />
                                 </div>
                               </div>
                             )}
