@@ -200,10 +200,10 @@
 
       // Configuração para suporte a Lançamentos Parcelados
       const [isInstallment, setIsInstallment] = useState(false);
-      const [installmentsCount, setInstallmentsCount] = useState(3);
+      const [installmentsCount, setInstallmentsCount] = useState(1); // Default dinâmico inicializado em 1
 
       const [isCcInstallment, setIsCcInstallment] = useState(false);
-      const [ccInstallmentsCount, setCcInstallmentsCount] = useState(3);
+      const [ccInstallmentsCount, setCcInstallmentsCount] = useState(1);
 
       // Modal para auto-ajustar limite quando excedido
       const [autoLimitModal, setAutoLimitModal] = useState({ isOpen: false, requested: 0, required: 0, txPayload: null });
@@ -286,6 +286,28 @@
         setCopied(true);
         triggerNotification('Regras de segurança copiadas com sucesso!');
         setTimeout(() => setCopied(false), 3000);
+      };
+
+      // Carregar dados estáticos caso a base de dados esteja limpa (Melhoria visual de testes)
+      const loadDemoData = () => {
+        const demoTransactions = [
+          { id: 't1', desc: 'Salário Mensal', amount: 4500, type: 'receita', category: 'salario', date: '2026-05-01', dueDate: '2026-05-01', accountId: 'default-acc', status: 'liquidado', createdAt: new Date().toISOString() },
+          { id: 't2', desc: 'IPTU', amount: 250, type: 'despesa', category: 'moradia', date: '2026-05-10', dueDate: '2026-05-10', accountId: 'default-acc', status: 'liquidado', createdAt: new Date().toISOString() },
+          { id: 't3', desc: 'Supermercado Mensal', amount: 800, type: 'despesa', category: 'alimentacao', date: '2026-05-15', dueDate: '2026-05-15', accountId: 'default-acc', status: 'liquidado', createdAt: new Date().toISOString() },
+          { id: 't4', desc: 'Rendimentos de Investimento', amount: 350, type: 'receita', category: 'investimentos', date: '2026-05-20', dueDate: '2026-05-20', accountId: 'default-acc', status: 'liquidado', createdAt: new Date().toISOString() }
+        ];
+
+        if (dbStatus === 'synced' && user) {
+          const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
+          demoTransactions.forEach(async (tx) => {
+            await addDoc(txCollectionRef, tx);
+          });
+          triggerNotification('Dados demonstrativos sincronizados na nuvem!');
+        } else {
+          setTransactions(demoTransactions);
+          saveToLocalStorage(demoTransactions, null, null, null, null, null);
+          triggerNotification('Dados demonstrativos carregados localmente!');
+        }
       };
 
       // ---------------------------------------------------------
@@ -639,10 +661,10 @@
         }
 
         const selectedAccId = newTx.accountId || accounts[0]?.id || 'default-acc';
-        const numInstallments = isInstallment ? (parseInt(installmentsCount) || 2) : 1;
+        const numInstallments = isInstallment ? Math.max(1, parseInt(installmentsCount) || 1) : 1;
 
         // Distribuição do valor pelas prestações
-        const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 105) / 105;
+        const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 100) / 100;
         const remainder = Math.round((totalAmount - (baseInstallmentAmount * numInstallments)) * 100) / 100;
 
         const generatedTxs = [];
@@ -702,6 +724,7 @@
           status: 'liquidado'
         });
         setIsInstallment(false);
+        setInstallmentsCount(1);
       };
 
       const saveMultipleTxsLocally = (txsArray) => {
@@ -831,7 +854,7 @@
           return;
         }
 
-        const numInstallments = isCcInstallment ? (parseInt(ccInstallmentsCount) || 2) : 1;
+        const numInstallments = isCcInstallment ? Math.max(1, parseInt(ccInstallmentsCount) || 1) : 1;
         const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 100) / 100;
         const remainder = Math.round((totalAmount - (baseInstallmentAmount * numInstallments)) * 100) / 100;
 
@@ -872,6 +895,7 @@
         await executeCcTransactionsWrite(generatedCcTxs);
         setNewCcTx({ desc: '', amount: '', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
         setIsCcInstallment(false);
+        setCcInstallmentsCount(1);
       };
 
       // Confirmar ajuste de limite e autorizar lançamento automaticamente
@@ -905,6 +929,7 @@
         setAutoLimitModal({ isOpen: false, requested: 0, required: 0, txPayload: null });
         setNewCcTx({ desc: '', amount: '', category: 'alimentacao', date: new Date().toISOString().split('T')[0] });
         setIsCcInstallment(false);
+        setCcInstallmentsCount(1);
         triggerNotification(`Limite do cartão ajustado para R$ ${newLimit.toFixed(2)} e compra autorizada!`);
       };
 
@@ -1067,7 +1092,7 @@
             const ccTxDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'creditTransactions', tx.id);
             const { id, ...payload } = updatedTx;
             await updateDoc(ccTxDocRef, payload);
-            triggerNotification('Lançamento do cartão atualizado!');
+            triggerNotification('Lançamento do cartão updated!');
           } catch (err) {
             console.error("Erro ao atualizar no Firebase:", err);
             updateCcTxLocally(updatedTx);
@@ -1598,17 +1623,28 @@
         return (!isNaN(amt) && amt > availableCcLimit);
       }, [newCcTx.amount, availableCcLimit]);
 
-      // Cálculo de Alerta de Cheque Especial no Formulário de Lançamento Ativo
+      // CORREÇÃO CRÍTICA DO CÁLCULO DE PROJEÇÃO DE LIMITE/CHEQUE ESPECIAL
+      // Agora, se a despesa for parcelada ("Dividir em Prestações" = true),
+      // o limite e o cheque especial são avaliados baseando-se unicamente
+      // no valor da PRIMEIRA prestação, que é o que de facto afetará o saldo este mês.
       const overdraftProjectedWarning = useMemo(() => {
         if (newTx.type !== 'despesa') return null;
-        const amt = parseFloat(newTx.amount) || 0;
-        if (amt <= 0) return null;
+        const totalAmount = parseFloat(newTx.amount) || 0;
+        if (totalAmount <= 0) return null;
+
+        // Se for parcelado, calcula o montante individual da primeira parcela
+        const numInstallments = isInstallment ? Math.max(1, parseInt(installmentsCount) || 1) : 1;
+        const baseInstallmentAmount = Math.floor((totalAmount / numInstallments) * 100) / 100;
+        const remainder = Math.round((totalAmount - (baseInstallmentAmount * numInstallments)) * 100) / 100;
+        
+        // O primeiro lançamento recebe apenas o seu valor proporcional
+        const firstInstallmentVal = (numInstallments === 1) ? totalAmount : baseInstallmentAmount;
 
         const targetId = newTx.accountId || accounts[0]?.id || 'default-acc';
         const targetAcc = accountsWithBalances.find(a => a.id === targetId);
         if (!targetAcc) return null;
 
-        const projectedBalance = targetAcc.currentBalance - amt;
+        const projectedBalance = targetAcc.currentBalance - firstInstallmentVal;
         const odfLimit = parseFloat(targetAcc.overdraftLimit) || 0;
 
         if (projectedBalance < 0) {
@@ -1620,12 +1656,14 @@
             projectedBalance,
             requiredOdf,
             odfLimit,
-            exceedsLimit
+            exceedsLimit,
+            installmentAmount: firstInstallmentVal,
+            numInstallments
           };
         }
 
         return null;
-      }, [newTx, accountsWithBalances, accounts]);
+      }, [newTx, accountsWithBalances, accounts, isInstallment, installmentsCount]);
 
       // Alertas do Cheque Especial ao motor de Saúde Financeira
       const financialTips = useMemo(() => {
@@ -1823,7 +1861,7 @@
                     <p className="font-bold text-slate-700 mb-1">Impacto Reativo no Cartão:</p>
                     <div className="flex justify-between text-slate-500">
                       <span>Crédito de Adiantamento:</span>
-                      <strong className="text-emerald-600 font-mono">- R$ {prepaymentLivePreview.paymentAmount.toFixed(2)}</strong>
+                      <strong className="text-emerald-650 font-mono">- R$ {prepaymentLivePreview.paymentAmount.toFixed(2)}</strong>
                     </div>
                     <div className="flex justify-between text-slate-500">
                       <span>Fatura Remante no Cartão:</span>
@@ -2011,7 +2049,7 @@
                   <h3 className="text-lg font-black text-slate-900">Confirmar Liquidação</h3>
                 </div>
                 
-                <div className="text-sm text-slate-600 space-y-4 mb-6">
+                <div className="text-sm text-slate-650 space-y-4 mb-6">
                   <p>Está prestes a liquidar a fatura do cartão referente a <strong className="text-slate-900">{paymentModal.label}</strong>.</p>
                   
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 space-y-3">
@@ -2379,7 +2417,7 @@
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full flex-1">
               
-              {/* Navegação Lateral */}
+              {/* Navigation Lateral */}
               <aside className="lg:col-span-3 flex flex-col gap-3">
                 
                 {/* Widget Seletor do Mês de Referência */}
@@ -2584,8 +2622,14 @@
                         </h3>
 
                         {stats.expense === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center space-y-3">
+                          <div className="flex flex-col items-center justify-center py-10 text-slate-400 text-center space-y-4">
                             <p className="text-xs">Não existem despesas liquidadas com vencimento neste período.</p>
+                            <button
+                              onClick={loadDemoData}
+                              className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition shadow flex items-center gap-2"
+                            >
+                              🚀 Carregar Base Demonstrativa
+                            </button>
                           </div>
                         ) : (
                           <div className="space-y-3">
@@ -2671,7 +2715,7 @@
                                 placeholder="0.00"
                                 value={newTx.amount}
                                 onChange={e => setNewTx(prev => ({ ...prev, amount: e.target.value }))}
-                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none"
+                                className="w-full text-xs rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none font-bold"
                                 required
                               />
                             </div>
@@ -2688,22 +2732,7 @@
                             </div>
                           </div>
 
-                          {/* Alerta de Cheque Especial no Lançamento */}
-                          {overdraftProjectedWarning && (
-                            <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-xl text-[11px] text-amber-900 space-y-1">
-                              <p className="font-bold flex items-center gap-1 text-xs">
-                                <span>⚠️</span> <span>Uso de Cheque Especial Detetado</span>
-                              </p>
-                              <p>Esta despesa utilizará <strong className="text-rose-600">R$ {overdraftProjectedWarning.requiredOdf.toFixed(2)}</strong> do limite de cheque especial da conta <strong>{overdraftProjectedWarning.accName}</strong>.</p>
-                              {overdraftProjectedWarning.exceedsLimit && (
-                                <p className="text-[10px] text-rose-600 font-bold leading-tight mt-1">
-                                  🚨 ERRO: O valor excede o limite disponível de cheque especial.
-                                </p>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Lançamento Parcelado */}
+                          {/* Lançamento Parcelado de Caixa */}
                           {newTx.type === 'despesa' && (
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
                               <div className="flex items-center gap-2">
@@ -2711,10 +2740,15 @@
                                   type="checkbox" 
                                   id="isInstallmentCheckbox"
                                   checked={isInstallment}
-                                  onChange={e => setIsInstallment(e.target.checked)}
+                                  onChange={e => {
+                                    setIsInstallment(e.target.checked);
+                                    if(e.target.checked && installmentsCount <= 1) {
+                                      setInstallmentsCount(2); // Inicia com pelo menos 2 se ativar parcelamento
+                                    }
+                                  }}
                                   className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 rounded"
                                 />
-                                <label htmlFor="isInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer">
+                                <label htmlFor="isInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
                                   Dividir em Prestações
                                 </label>
                               </div>
@@ -2724,19 +2758,45 @@
                                   <div className="flex items-center gap-3">
                                     <span className="text-xs text-slate-500 shrink-0">Número de parcelas:</span>
                                     <input 
-                                      type="number" 
-                                      min="2"
-                                      max="120"
-                                      placeholder="Ex: 12"
+                                      type="number"
+                                      min="1"
+                                      max="360"
                                       value={installmentsCount}
-                                      onChange={e => {
-                                        const val = e.target.value;
-                                        setInstallmentsCount(val === '' ? '' : Math.max(2, parseInt(val) || 2));
-                                      }}
-                                      className="flex-1 text-xs rounded-lg border border-slate-200 p-1.5 focus:outline-none font-bold text-slate-800"
+                                      onChange={e => setInstallmentsCount(Math.max(1, parseInt(e.target.value) || 1))}
+                                      className="w-24 text-xs rounded-xl border border-slate-200 px-2.5 py-1.5 focus:outline-none font-bold text-slate-850"
                                     />
                                   </div>
+                                  
+                                  {/* Legenda Dinâmica de Divisão */}
+                                  {parseFloat(newTx.amount) > 0 && (
+                                    <p className="text-[10px] text-indigo-650 font-medium leading-normal italic">
+                                      Irá criar {installmentsCount} lançamentos de R$ {(parseFloat(newTx.amount) / installmentsCount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mês nas despesas seguintes.
+                                    </p>
+                                  )}
                                 </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Alerta de Cheque Especial no Lançamento com Cálculo Otimizado de Parcelamento */}
+                          {overdraftProjectedWarning && (
+                            <div className="bg-amber-50 border-l-4 border-amber-550 p-3 rounded-xl text-[11px] text-amber-900 space-y-1 shadow-sm">
+                              <p className="font-bold flex items-center gap-1 text-xs">
+                                <span>⚠️</span> <span>Uso de Cheque Especial Detetado</span>
+                              </p>
+                              {isInstallment ? (
+                                <p>
+                                  Esta despesa é parcelada. A primeira prestação de <strong className="text-slate-900">R$ {overdraftProjectedWarning.installmentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> utilizará 
+                                  <strong className="text-rose-600"> R$ {overdraftProjectedWarning.requiredOdf.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> do limite de cheque especial da conta <strong>{overdraftProjectedWarning.accName}</strong>.
+                                </p>
+                              ) : (
+                                <p>Esta despesa utilizará <strong className="text-rose-600">R$ {overdraftProjectedWarning.requiredOdf.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> do limite de cheque especial da conta <strong>{overdraftProjectedWarning.accName}</strong>.</p>
+                              )}
+                              
+                              {overdraftProjectedWarning.exceedsLimit && (
+                                <p className="text-[10px] text-rose-600 font-black leading-tight mt-1.5 uppercase">
+                                  🚨 ERRO: O valor excede o limite disponível de cheque especial para esta conta.
+                                </p>
                               )}
                             </div>
                           )}
@@ -2793,6 +2853,7 @@
                                     category: nt === 'receita' ? CATEGORIES.receita[0].id : CATEGORIES.despesa[0].id
                                   }));
                                   setIsInstallment(false);
+                                  setInstallmentsCount(1);
                                 }}
                                 className="w-full text-xs rounded-xl border border-slate-200 px-2 py-2.5 focus:outline-none font-semibold text-slate-700"
                               >
@@ -2817,20 +2878,24 @@
                           <button 
                             type="submit"
                             disabled={overdraftProjectedWarning?.exceedsLimit}
-                            className={`w-full mt-2 font-bold py-2.5 rounded-xl text-xs transition shadow ${
+                            className={`w-full mt-2 font-bold py-2.5 rounded-xl text-xs transition shadow-md ${
                               overdraftProjectedWarning?.exceedsLimit
-                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                                 : 'bg-slate-900 hover:bg-slate-800 text-white'
                             }`}
                           >
-                            {overdraftProjectedWarning?.exceedsLimit ? 'Limite Insuficiente' : isInstallment ? `Confirmar ${installmentsCount} Prestações` : 'Confirmar Lançamento'}
+                            {overdraftProjectedWarning?.exceedsLimit 
+                              ? 'Limite Insuficiente' 
+                              : isInstallment 
+                                ? `Confirmar ${installmentsCount} Prestações` 
+                                : 'Confirmar Lançamento'}
                           </button>
                         </form>
                       </div>
 
                       {/* Lista de transações do mês de referência */}
                       <div className="md:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-                        <div className="flex justify-between items-center mb-4">
+                        <div className="flex justify-between items-center mb-4 font-sans">
                           <h3 className="font-extrabold text-slate-900 text-base">Lançamentos Registados</h3>
                           <button onClick={() => setActiveTab('transactions')} className="text-xs text-emerald-600 font-bold hover:underline">
                             Ver Extrato Computado
@@ -2857,7 +2922,7 @@
                                 const isPending = t.status === 'pendente';
 
                                 return (
-                                  <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/20' : ''}`}>
+                                  <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/10' : ''}`}>
                                     <td className="py-3">
                                       <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-800'}`}>{t.desc}</div>
                                       <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
@@ -2891,7 +2956,7 @@
                                         )}
                                         <button 
                                           onClick={() => openEditModal(t)} 
-                                          className="text-slate-300 hover:text-indigo-600 p-1"
+                                          className="text-slate-300 hover:text-indigo-650 p-1"
                                           title="Editar Lançamento"
                                         >
                                           <Icon name="edit" className="w-4 h-4" />
@@ -2939,7 +3004,7 @@
                             placeholder="Procurar transação..."
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            className="pl-8 pr-4 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none"
+                            className="pl-8 pr-4 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none animate-fade-in"
                           />
                         </div>
 
@@ -2984,7 +3049,7 @@
                             const isPending = t.status === 'pendente';
 
                             return (
-                              <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/10' : ''}`}>
+                              <tr key={t.id} className={`hover:bg-slate-50/50 ${isPending ? 'bg-amber-50/5' : ''}`}>
                                 <td className="py-4">
                                   <div className={`font-semibold ${isPending ? 'text-slate-500 italic' : 'text-slate-900'}`}>{t.desc}</div>
                                   <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
@@ -3211,7 +3276,7 @@
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                       
                       {/* Card de Crédito Físico */}
-                      <div className="md:col-span-7 flex flex-col justify-between">
+                      <div className="md:col-span-7 flex flex-col justify-between animate-fade-in">
                         <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-xl border border-slate-700/50 flex flex-col justify-between relative overflow-hidden min-h-[220px]">
                           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
                           <div className="absolute bottom-0 left-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl"></div>
@@ -3281,13 +3346,13 @@
                             type="button"
                             onClick={openPrepaymentModal}
                             disabled={totalUnpaidCcAmount <= 0}
-                            className={`w-full sm:w-auto text-white text-[11px] font-bold px-4 py-3 rounded-xl transition shadow flex items-center justify-center gap-1.5 ${
+                            className={`w-full text-white text-[11px] font-bold px-4 py-3 rounded-xl transition shadow flex items-center justify-center gap-1.5 ${
                               totalUnpaidCcAmount <= 0 
                                 ? 'bg-slate-300 cursor-not-allowed text-slate-500' 
-                                : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow-lg'
+                                : 'bg-emerald-650 hover:bg-emerald-700 hover:shadow-lg'
                             }`}
                           >
-                            <span>💰 Adiantar Pagamento (Adicionar Crédito de r$100,00 ou mais)</span>
+                            <span>💰 Adiantar Pagamento (Adicionar Crédito de R$100,00 ou mais)</span>
                           </button>
                         </div>
                       </div>
@@ -3358,7 +3423,7 @@
                     {/* Lançamento e Faturas Mensais */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                       
-                      <div className="md:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 h-fit">
+                      <div className="md:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 h-fit animate-fade-in">
                         <h3 className="font-extrabold text-slate-900 text-sm mb-3">Lançar Compra a Crédito</h3>
                         <form onSubmit={handleAddCcTransaction} className="space-y-3">
                           <div>
@@ -3408,7 +3473,12 @@
                                 type="checkbox" 
                                 id="isCcInstallmentCheckbox"
                                 checked={isCcInstallment}
-                                onChange={e => setIsCcInstallment(e.target.checked)}
+                                onChange={e => {
+                                  setIsCcInstallment(e.target.checked);
+                                  if(e.target.checked && ccInstallmentsCount <= 1) {
+                                    setCcInstallmentsCount(2); // Começa com 2 se for ativado
+                                  }
+                                }}
                                 className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded"
                               />
                               <label htmlFor="isCcInstallmentCheckbox" className="text-xs font-bold text-slate-700 cursor-pointer">
@@ -3420,18 +3490,19 @@
                                 <div className="flex items-center gap-3">
                                   <span className="text-xs text-slate-500 shrink-0">Parcelas:</span>
                                   <input 
-                                    type="number" 
-                                    min="2"
-                                    max="120"
-                                    placeholder="Ex: 3"
+                                    type="number"
+                                    min="1"
+                                    max="360"
                                     value={ccInstallmentsCount}
-                                    onChange={e => {
-                                      const val = e.target.value;
-                                      setCcInstallmentsCount(val === '' ? '' : Math.max(2, parseInt(val) || 2));
-                                    }}
-                                    className="flex-1 text-xs rounded-lg border border-slate-200 p-1.5 focus:outline-none font-bold text-slate-800"
+                                    onChange={e => setCcInstallmentsCount(Math.max(1, parseInt(e.target.value) || 1))}
+                                    className="w-24 text-xs rounded-xl border border-slate-200 px-2.5 py-1.5 focus:outline-none font-bold text-slate-850"
                                   />
                                 </div>
+                                {parseFloat(newCcTx.amount) > 0 && (
+                                  <p className="text-[10px] text-indigo-600 leading-normal italic">
+                                    Irá criar {ccInstallmentsCount} lançamentos de R$ {(parseFloat(newCcTx.amount) / ccInstallmentsCount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mês nas faturas seguintes.
+                                  </p>
+                                )}
                               </div>
                             )}
                           </div>
@@ -3852,7 +3923,7 @@
 
                 {/* 7. SEPARADOR: SIMULADOR DE JUROS COMPOSTOS */}
                 {activeTab === 'simulator' && (
-                  <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-6">
+                  <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-6 animate-fade-in">
                     <div>
                       <h2 className="font-extrabold text-slate-900 text-lg">Simulador de Juros Compostos</h2>
                       <p className="text-xs text-slate-400">Projete os seus investimentos e compare o efeito multiplicador dos juros no tempo.</p>
