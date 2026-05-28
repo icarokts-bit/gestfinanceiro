@@ -136,7 +136,8 @@
         bank: <><rect x="3" y="21" width="18" height="2"/><rect x="5" y="10" width="2" height="11"/><rect x="11" y="10" width="2" height="11"/><rect x="17" y="10" width="2" height="11"/><polygon points="12 2 2 9 22 9 12 2"/></>,
         edit: <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>,
         chevronLeft: <polyline points="15 18 9 12 15 6"/>,
-        chevronRight: <polyline points="9 18 15 12 9 6"/>
+        chevronRight: <polyline points="9 18 15 12 9 6"/>,
+        report: <><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>
       };
 
       return (
@@ -2483,6 +2484,16 @@
                     </button>
 
                     <button 
+                      onClick={() => setActiveTab('report')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
+                        activeTab === 'report' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <Icon name="report" className="w-4 h-4 text-emerald-600" />
+                      Relatório Financeiro
+                    </button>
+
+                    <button 
                       onClick={() => setActiveTab('transactions')}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition ${
                         activeTab === 'transactions' ? 'bg-emerald-50 text-emerald-800 font-bold' : 'hover:bg-slate-50 text-slate-600'
@@ -2977,6 +2988,350 @@
                                   </td>
                                 </tr>
                               )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                    </div>
+
+                  </div>
+                )}
+
+                {/* 8. SEPARADOR: RELATÓRIO FINANCEIRO COMPLETO */}
+                {activeTab === 'report' && (
+                  <div className="space-y-6">
+                    {}
+                    <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black tracking-widest uppercase px-2.5 py-1 rounded-full">
+                          Módulo Analítico
+                        </span>
+                        <h2 className="text-xl font-black text-slate-900 mt-2">Relatório Financeiro Consolidado</h2>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Balanço detalhado de entradas, saídas de caixa, cartões e integridade de saldo para o período de <strong>{selectedMonth === 'all' ? 'Todos os Períodos' : selectedMonth}</strong>.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => {
+                            let csv = "Tipo,Descricao,Categoria,Vencimento,Valor,Estado\n";
+                            
+                            transactionsFilteredByMonth.forEach(t => {
+                              const isInc = t.type === 'receita';
+                              const cat = CATEGORIES[t.type].find(c => c.id === t.category)?.name || t.category;
+                              csv += `${isInc ? 'Receita' : 'Despesa'},"${t.desc.replace(/"/g, '""')}",${cat},${t.dueDate || t.date},${t.amount},${t.status}\n`;
+                            });
+
+                            ccTransactionsFilteredByMonth.forEach(t => {
+                              const cat = CATEGORIES.despesa.find(c => c.id === t.category)?.name || t.category;
+                              csv += `Despesa Cartao,"${t.desc.replace(/"/g, '""')}",${cat},${t.date},${t.amount},${t.paid ? 'Pago' : 'Em Aberto'}\n`;
+                            });
+
+                            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement("a");
+                            link.setAttribute("href", url);
+                            link.setAttribute("download", `Relatorio_FinancasPro_${selectedMonth}.csv`);
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            triggerNotification('Relatório CSV descarregado com sucesso!');
+                          }}
+                          className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition font-bold text-xs flex items-center gap-2 text-slate-700"
+                        >
+                          <Icon name="download" className="w-4 h-4 text-slate-500" />
+                          <span>Descarregar CSV</span>
+                        </button>
+
+                        <button
+                          onClick={() => window.print()}
+                          className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-2 transition shadow-md"
+                        >
+                          <span>🖨️ Imprimir Relatório</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {}
+                    {/* Sumário Completo do Balanço */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      {/* Entradas */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tudo o que Entra (Receitas)</p>
+                        <p className="text-xl font-black text-emerald-600 mt-1">
+                          R$ {(stats.income + stats.pendingIncome).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <div className="mt-2 pt-2 border-t border-slate-100 flex flex-col gap-1 text-[10px] text-slate-500">
+                          <div className="flex justify-between">
+                            <span>Liquidado:</span>
+                            <span className="font-semibold text-emerald-600">R$ {stats.income.toLocaleString('pt-BR')}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Pendente:</span>
+                            <span className="font-semibold text-amber-600">R$ {stats.pendingIncome.toLocaleString('pt-BR')}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Saídas */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tudo o que Sai (Despesas)</p>
+                        <p className="text-xl font-black text-rose-650 mt-1">
+                          R$ {(stats.expense + stats.pendingExpense + activeInvoiceTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <div className="mt-2 pt-2 border-t border-slate-100 flex flex-col gap-1 text-[10px] text-slate-500">
+                          <div className="flex justify-between">
+                            <span>Despesas Caixa:</span>
+                            <span className="font-semibold">R$ {(stats.expense + stats.pendingExpense).toLocaleString('pt-BR')}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Despesas Cartão:</span>
+                            <span className="font-semibold">R$ {activeInvoiceTotal.toLocaleString('pt-BR')}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Saldo de Fim de Mês (Efetivo / Real) */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Saldo Final de Mês (Real)</p>
+                        <p className={`text-xl font-black mt-1 ${(stats.income - stats.expense) >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                          R$ {(stats.income - stats.expense).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-400">
+                          Apenas transações efetivadas e liquidadas de caixa no período.
+                        </div>
+                      </div>
+
+                      {/* Saldo Projetado */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Saldo Final Projetado</p>
+                        {(() => {
+                          const proj = (stats.income + stats.pendingIncome) - (stats.expense + stats.pendingExpense + activeInvoiceTotal);
+                          return (
+                            <>
+                              <p className={`text-xl font-black mt-1 ${proj >= 0 ? 'text-indigo-650' : 'text-rose-650'}`}>
+                                R$ {proj.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                              <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-400">
+                                Considera lançamentos pendentes e faturas de cartão.
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Gastos por Categoria e Análise de Desempenho */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                      
+                      {/* Gastos por Categoria Ordenados */}
+                      <div className="md:col-span-7 bg-white rounded-3xl p-6 border border-slate-200 space-y-4">
+                        <h3 className="font-extrabold text-slate-900 text-sm uppercase tracking-wide text-slate-500">
+                          Distribuição de Custos (Categoria)
+                        </h3>
+
+                        {stats.expense === 0 ? (
+                          <p className="text-xs text-slate-400 italic py-6 text-center">Sem dados de saídas registadas no período de referência.</p>
+                        ) : (
+                          <div className="space-y-4">
+                            {CATEGORIES.despesa
+                              .map(cat => {
+                                const spent = stats.categoryTotals[cat.id] || 0;
+                                const percentage = stats.expense > 0 ? (spent / stats.expense) * 100 : 0;
+                                return { ...cat, spent, percentage };
+                              })
+                              .sort((a, b) => b.spent - a.spent) // Do maior para o menor custo
+                              .map(cat => {
+                                if (cat.spent === 0) return null;
+                                return (
+                                  <div key={cat.id} className="space-y-1.5 p-3 rounded-2xl hover:bg-slate-50 transition border border-transparent hover:border-slate-100">
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="font-bold flex items-center gap-2">
+                                        <span>{cat.icon}</span>
+                                        <span>{cat.name}</span>
+                                      </span>
+                                      <span className="font-mono font-bold text-slate-800">
+                                        R$ {cat.spent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ({cat.percentage.toFixed(1)}%)
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                                      <div className={`h-2.5 rounded-full ${cat.color}`} style={{ width: `${cat.percentage}%` }}></div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* AI Copilot Advisor / Diagnóstico */}
+                      <div className="md:col-span-5 bg-white rounded-3xl p-6 border border-slate-200 flex flex-col justify-between">
+                        <div className="space-y-4">
+                          <h3 className="font-extrabold text-slate-900 text-sm uppercase tracking-wide text-slate-500">
+                            Diagnóstico de Integridade Financeira
+                          </h3>
+
+                          {(() => {
+                            const saldoEfetivo = stats.income - stats.expense;
+                            const taxaPoupanca = stats.savingsRate;
+
+                            return (
+                              <div className="space-y-3">
+                                {saldoEfetivo > 0 && taxaPoupanca >= 20 ? (
+                                  <div className="p-4 bg-emerald-55/40 border border-emerald-100 rounded-2xl text-emerald-900 space-y-2 text-xs">
+                                    <p className="font-black text-sm">🟢 Saúde Financeira Estável</p>
+                                    <p className="leading-relaxed">O seu balanço é positivo e a sua taxa de poupança excede os 20% recomendados pelas boas práticas financeiras. Está a construir património de forma sólida.</p>
+                                  </div>
+                                ) : saldoEfetivo > 0 ? (
+                                  <div className="p-4 bg-amber-55/40 border border-amber-100 rounded-2xl text-amber-900 space-y-2 text-xs">
+                                    <p className="font-black text-sm">🟡 Alerta de Retenção de Capital</p>
+                                    <p className="leading-relaxed">Apesar de obter saldo positivo, a sua taxa de poupança situa-se abaixo dos 20%. Considere rever pequenos gastos discricionários em categorias como Lazer e Alimentação.</p>
+                                  </div>
+                                ) : (
+                                  <div className="p-4 bg-rose-55/40 border border-rose-150 rounded-2xl text-rose-900 space-y-2 text-xs">
+                                    <p className="font-black text-sm">🔴 Alerta Crítico: Fluxo Negativo</p>
+                                    <p className="leading-relaxed">As suas despesas superaram os seus proveitos neste período de análise. Há risco elevado de utilização indesejada de Cheque Especial e acumulação de dívidas.</p>
+                                  </div>
+                                )}
+
+                                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-slate-650 text-xs leading-relaxed space-y-1.5">
+                                  <p className="font-bold text-slate-800">Principais Recomendações:</p>
+                                  <ul className="list-disc list-inside space-y-1 text-[11px]">
+                                    <li>Mantenha um fundo de emergência equivalente a 6 meses de despesas.</li>
+                                    <li>Evite compras parceladas no cartão de crédito se o seu saldo mensal projetado for menor que R$ 1.000,00.</li>
+                                    <li>Agende e liquide as suas contas nas respetivas datas de vencimento para evitar juros de mora.</li>
+                                  </ul>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        <div className="text-[9px] text-slate-400 mt-4 leading-tight italic">
+                          *Este diagnóstico baseia-se unicamente nas suas transações locais e na nuvem para o mês selecionado.
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Detalhamento das Transações que Entram e Saem */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      
+                      {/* Entradas detalhadas */}
+                      <div className="bg-white rounded-3xl p-6 border border-slate-200">
+                        <h4 className="font-extrabold text-slate-900 text-sm mb-4 flex items-center gap-2">
+                          <span className="text-emerald-500 text-lg">📥</span>
+                          <span>Entradas Detalhadas (Proveitos)</span>
+                        </h4>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-slate-400 font-bold">
+                                <th className="pb-2">Origem</th>
+                                <th className="pb-2">Vencimento</th>
+                                <th className="pb-2 text-right">Valor</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {transactionsFilteredByMonth
+                                .filter(t => t.type === 'receita')
+                                .map(t => {
+                                  const catObj = CATEGORIES.receita.find(c => c.id === t.category) || { name: 'Geral', icon: '💸' };
+                                  return (
+                                    <tr key={t.id} className="hover:bg-slate-50/50">
+                                      <td className="py-2.5">
+                                        <div className="font-semibold text-slate-800">{t.desc}</div>
+                                        <div className="text-[9px] text-slate-400">{catObj.icon} {catObj.name} • {t.status}</div>
+                                      </td>
+                                      <td className="py-2.5 text-slate-500 font-mono">
+                                        {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
+                                      </td>
+                                      <td className="py-2.5 text-right font-bold text-emerald-600">
+                                        + R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+
+                              {transactionsFilteredByMonth.filter(t => t.type === 'receita').length === 0 && (
+                                  <tr>
+                                    <td colSpan="3" className="py-8 text-center text-slate-400 italic">
+                                      Sem entradas registadas para este período.
+                                    </td>
+                                  </tr>
+                                )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Saídas detalhadas */}
+                      <div className="bg-white rounded-3xl p-6 border border-slate-200">
+                        <h4 className="font-extrabold text-slate-900 text-sm mb-4 flex items-center gap-2">
+                          <span className="text-rose-500 text-lg">📤</span>
+                          <span>Saídas Detalhadas (Custos)</span>
+                        </h4>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-slate-400 font-bold">
+                                <th className="pb-2">Destino</th>
+                                <th className="pb-2">Vencimento / Data</th>
+                                <th className="pb-2 text-right">Valor</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {/* Saídas de Caixa */}
+                              {transactionsFilteredByMonth
+                                .filter(t => t.type === 'despesa')
+                                .map(t => {
+                                  const catObj = CATEGORIES.despesa.find(c => c.id === t.category) || { name: 'Geral', icon: '🛒' };
+                                  return (
+                                    <tr key={t.id} className="hover:bg-slate-50/50">
+                                      <td className="py-2.5">
+                                        <div className="font-semibold text-slate-800">{t.desc}</div>
+                                        <div className="text-[9px] text-slate-400">{catObj.icon} {catObj.name} • Caixa ({t.status})</div>
+                                      </td>
+                                      <td className="py-2.5 text-slate-500 font-mono">
+                                        {new Date(t.dueDate || t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
+                                      </td>
+                                      <td className="py-2.5 text-right font-bold text-slate-800">
+                                        - R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+
+                              {/* Saídas de Cartão de Crédito */}
+                              {ccTransactionsFilteredByMonth.map(t => {
+                                  const catObj = CATEGORIES.despesa.find(c => c.id === t.category) || { name: 'Geral', icon: '🛒' };
+                                  return (
+                                    <tr key={t.id} className="hover:bg-slate-50/50 bg-slate-50/30">
+                                      <td className="py-2.5">
+                                        <div className="font-semibold text-slate-800">{t.desc}</div>
+                                        <div className="text-[9px] text-slate-400">{catObj.icon} {catObj.name} • Cartão ({t.paid ? 'Pago' : 'Aberto'})</div>
+                                      </td>
+                                      <td className="py-2.5 text-slate-500 font-mono">
+                                        {new Date(t.date).toLocaleDateString('pt-PT', { timeZone: 'UTC' })}
+                                      </td>
+                                      <td className="py-2.5 text-right font-bold text-amber-600">
+                                        - R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+
+                              {transactionsFilteredByMonth.filter(t => t.type === 'despesa').length === 0 && ccTransactionsFilteredByMonth.length === 0 && (
+                                  <tr>
+                                    <td colSpan="3" className="py-8 text-center text-slate-400 italic">
+                                      Sem saídas registadas para este período.
+                                    </td>
+                                  </tr>
+                                )}
                             </tbody>
                           </table>
                         </div>
